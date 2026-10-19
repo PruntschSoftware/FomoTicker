@@ -1,0 +1,17 @@
+{
+  "name": "aktien-ticker-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend für die Garmin-App Aktien Ticker: Kurse, Geräte-Kopplung, Stripe-Abo",
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
+}
