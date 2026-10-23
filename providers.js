@@ -16,8 +16,9 @@
 //   loadDirectory()      -> [{ symbol, name, exchange, mic, country, type }]   (Suche)
 //
 // Für jede Aufgabe (Kurse, Charts, Suche) wird der erste konfigurierte Anbieter aus
-// PROVIDERS genommen, der sie kann. Einzeln überschreibbar mit QUOTE_PROVIDER,
+// PROVIDERS genommen, der sie kann. Einzeln überschreibbar mit QUOTES_PROVIDER,
 // SERIES_PROVIDER, DIRECTORY_PROVIDER. Jeder Anbieter hat sein eigenes Credit-Budget.
+// Das alte QUOTE_PROVIDER gilt nur noch, wenn PROVIDERS fehlt.
 
 import { createBudget } from './quotes.js';
 import { createAlpaca } from './alpaca.js';
@@ -115,9 +116,7 @@ export function createProviders(env, { markets = 'us', log = console } = {}) {
 
   const pick = (method, overrideVar) => {
     const forced = env[overrideVar] && String(env[overrideVar]).toLowerCase();
-    // Altes QUOTE_PROVIDER ist nur dann ein Override, wenn PROVIDERS gesetzt ist
-    const useForced = forced && (overrideVar !== 'QUOTE_PROVIDER' || env.PROVIDERS);
-    if (useForced) {
+    if (forced) {
       const p = all.find((x) => x.id === forced);
       if (p && typeof p[method] === 'function') return p;
       warnings.push(`${overrideVar}=${forced} kann "${method}" nicht – nehme den nächsten passenden`);
@@ -126,7 +125,7 @@ export function createProviders(env, { markets = 'us', log = console } = {}) {
   };
 
   const chosen = {
-    quotes: pick('fetchQuotes', 'QUOTE_PROVIDER'),
+    quotes: pick('fetchQuotes', 'QUOTES_PROVIDER'),
     series: pick('fetchSeries', 'SERIES_PROVIDER'),
     directory: pick('loadDirectory', 'DIRECTORY_PROVIDER'),
     all,
