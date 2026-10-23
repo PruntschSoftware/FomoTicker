@@ -8,7 +8,7 @@ import { createTwelveData } from './twelvedata.js';
 export function createProvider(cfg, { budget = null } = {}) {
   switch (cfg.quoteProvider) {
     case 'twelvedata':
-      return createTwelveData({ ...cfg.twelveData, budget });
+      return createTwelveData({ ...cfg.twelveData, budget, markets: cfg.directoryMarkets });
     case 'mock':
       return createMock();
     default:

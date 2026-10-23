@@ -25,31 +25,45 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export class BudgetError extends Error {}
 
 /**
- * Credit-Budget pro Minute (gleitendes Fenster). acquire(n) wartet höchstens maxWaitMs
- * auf freie Credits; reserve hält Credits für dringende Abrufe (Kurse) frei.
+ * Credit-Budget beim Datenanbieter: pro Minute (gleitendes Fenster) und pro Tag (UTC).
+ * acquire(n) wartet höchstens maxWaitMs auf freie Minuten-Credits; reserve hält
+ * Minuten-Credits, dayReserve Tages-Credits für dringende Abrufe (Kurse) frei.
  */
-export function createBudget({ perMinute = 8, now = () => Date.now() } = {}) {
+export function createBudget({ perMinute = 8, perDay = 0, now = () => Date.now() } = {}) {
   const spent = []; // [timestamp, credits]
+  let day = '';
+  let dayUsed = 0;
   const used = () => {
     const t = now() - 60000;
     while (spent.length && spent[0][0] <= t) spent.shift();
     return spent.reduce((a, [, c]) => a + c, 0);
   };
+  const today = () => {
+    const d = new Date(now()).toISOString().slice(0, 10);
+    if (d !== day) { day = d; dayUsed = 0; }
+    return dayUsed;
+  };
   return {
     perMinute,
-    available: () => Math.max(0, perMinute - used()),
-    async acquire(n, { maxWaitMs = 0, reserve = 0 } = {}) {
-      if (!(perMinute > 0)) return; // 0 = unbegrenzt
-      if (n > perMinute) n = perMinute; // große Batches nicht für immer blockieren
-      const deadline = now() + maxWaitMs;
-      for (;;) {
-        if (perMinute - used() - reserve >= n) {
-          spent.push([now(), n]);
-          return;
-        }
-        if (now() >= deadline) throw new BudgetError('Credit-Budget erschöpft');
-        await sleep(Math.min(1000, Math.max(50, deadline - now())));
+    perDay,
+    available: () => (perMinute > 0 ? Math.max(0, perMinute - used()) : Infinity),
+    dayLeft: () => (perDay > 0 ? Math.max(0, perDay - today()) : Infinity),
+    stats: () => ({ minute: used(), day: today(), perMinute, perDay }),
+    async acquire(n, { maxWaitMs = 0, reserve = 0, dayReserve = 0 } = {}) {
+      if (perDay > 0 && today() + n > perDay - dayReserve) {
+        throw new BudgetError('Tages-Budget erschöpft');
       }
+      if (perMinute > 0) {
+        if (n > perMinute) n = perMinute; // große Batches nicht für immer blockieren
+        const deadline = now() + maxWaitMs;
+        for (;;) {
+          if (perMinute - used() - reserve >= n) break;
+          if (now() >= deadline) throw new BudgetError('Credit-Budget erschöpft');
+          await sleep(Math.min(1000, Math.max(50, deadline - now())));
+        }
+        spent.push([now(), n]);
+      }
+      if (perDay > 0) { today(); dayUsed += n; }
     },
   };
 }
@@ -64,8 +78,16 @@ export function createQuoteCache({
   warmWindowSeconds = 600,
   maxBatch = 8,
   maxEntries = 5000,
+  missSeconds = 120,         // "keine Daten" nur kurz merken
+  isFresh = null,            // optional (key, at, now) -> bool, ersetzt cacheSeconds
   log = console,
 }) {
+  const fresh = (k, hit, now) => {
+    if (!hit) return false;
+    if (!hit.value) return now - hit.at < missSeconds * 1000;
+    if (isFresh) return isFresh(k, hit.at, now);
+    return now - hit.at < cacheSeconds * 1000;
+  };
   const cache = new Map();    // key -> { at, value | null }
   const asked = new Map();    // key -> zuletzt von einer Uhr gefragt
   const inflight = new Map(); // key -> Promise<map>
@@ -128,7 +150,7 @@ export function createQuoteCache({
         asked.set(k, now);
         const hit = cache.get(k);
         const age = hit ? now - hit.at : Infinity;
-        if (hit && age < cacheSeconds * 1000) {
+        if (fresh(k, hit, now)) {
           if (hit.value) result[k] = hit.value;
         } else if (hit?.value && age < staleSeconds * 1000) {
           result[k] = hit.value;   // sofort liefern …
@@ -170,7 +192,7 @@ export function createQuoteCache({
       for (const [k, t] of asked) {
         if (now - t > warmWindowSeconds * 1000) { asked.delete(k); continue; }
         const hit = cache.get(k);
-        if (!hit || now - hit.at >= cacheSeconds * 1000) due.push(k);
+        if (!fresh(k, hit, now)) due.push(k);
       }
       if (due.length) refreshInBackground(due);
       return due.length;

@@ -13,9 +13,11 @@ const num = (v) => {
 const round = (n) => Math.round(n * 10000) / 10000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Börsen, deren Aktien (bzw. ETFs) für die Suche geladen werden
-const DIRECTORY_JOBS = [
-  ['stocks', 'XNAS'], ['stocks', 'XNYS'], ['etfs', 'ARCX'], ['etfs', 'XNAS'],
+// Börsen, deren Aktien (bzw. ETFs) für die Suche geladen werden.
+// Twelve Data Basic (gratis) liefert nur US-Kurse -> standardmäßig nur US.
+const US_JOBS = [['stocks', 'XNAS'], ['stocks', 'XNYS'], ['etfs', 'ARCX'], ['etfs', 'XNAS']];
+const WORLD_JOBS = [
+  ...US_JOBS,
   ['stocks', 'XETR'], ['etfs', 'XETR'], ['stocks', 'XWBO'], ['stocks', 'XLON'],
   ['stocks', 'XPAR'], ['stocks', 'XAMS'], ['stocks', 'XSWX'], ['stocks', 'XMIL'],
   ['stocks', 'XMAD'], ['stocks', 'XSTO'], ['stocks', 'XTSE'],
@@ -43,14 +45,16 @@ function toSeries(item) {
 const SERIES = { interval: '15min', outputsize: '28' };
 
 // Priorität beim Credit-Budget: Kurse > Charts > Verzeichnis
+// (reserve = Minuten-Credits, dayReserve = Tages-Credits, die für Kurse frei bleiben)
 const PRIO = {
-  quote: { maxWaitMs: 4000, reserve: 0 },
-  series: { maxWaitMs: 0, reserve: 3 },
-  directory: { maxWaitMs: 10 * 60 * 1000, reserve: 5 },
+  quote: { maxWaitMs: 4000, reserve: 0, dayReserve: 0 },
+  series: { maxWaitMs: 1500, reserve: 2, dayReserve: 150 },
+  directory: { maxWaitMs: 10 * 60 * 1000, reserve: 4, dayReserve: 100 },
 };
 
-export function createTwelveData({ apiKey, baseUrl, budget = null, directoryDelayMs = 0 }) {
+export function createTwelveData({ apiKey, baseUrl, budget = null, directoryDelayMs = 0, markets = 'us' }) {
   if (!apiKey) throw new Error('TWELVEDATA_API_KEY fehlt');
+  const DIRECTORY_JOBS = markets === 'all' ? WORLD_JOBS : US_JOBS;
 
   async function get(path, params, { cost = 1, prio = 'quote' } = {}) {
     if (budget) await budget.acquire(cost, PRIO[prio]);
@@ -120,7 +124,10 @@ export function createTwelveData({ apiKey, baseUrl, budget = null, directoryDela
       for (const k of keys.filter((x) => x.includes('@'))) {
         jobs.push(seriesSingle(k).then((v) => { if (v) out[k] = v; }));
       }
-      await Promise.allSettled(jobs);
+      const results = await Promise.allSettled(jobs);
+      const failed = results.filter((r) => r.status === 'rejected');
+      // alles fehlgeschlagen (z. B. Budget) -> Fehler, damit nichts als "leer" gecacht wird
+      if (failed.length === results.length && failed.length > 0) throw failed[0].reason;
       return out;
     },
 

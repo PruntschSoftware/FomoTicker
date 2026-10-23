@@ -32,6 +32,10 @@ export const config = {
   seriesCacheSeconds: num(env.SERIES_CACHE_SECONDS, 900),
   // Credits pro Minute beim Datenanbieter (Twelve Data Basic: 8), 0 = unbegrenzt
   creditsPerMinute: num(env.CREDITS_PER_MINUTE, 8),
+  // Credits pro Tag (Twelve Data Basic: 800), 0 = unbegrenzt
+  creditsPerDay: num(env.CREDITS_PER_DAY, 800),
+  // Börsen für die Suche: "us" (Basic-Plan) oder "all" (ab Grow-Plan)
+  directoryMarkets: env.DIRECTORY_MARKETS || 'us',
   // Symbole pro Sammelabruf
   batchSize: num(env.BATCH_SIZE, 8),
   twelveData: {
