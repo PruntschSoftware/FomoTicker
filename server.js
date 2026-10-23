@@ -5,7 +5,7 @@ import { createCacheStore, createPool, migrate, startPaywallOnce } from './db.js
 import { createProvider } from './providers.js';
 import { createBudget, createQuoteCache } from './quotes.js';
 import { createDirectory, US_MICS } from './directory.js';
-import { adaptiveSeconds, freshness } from './market.js';
+import { freshness } from './market.js';
 import { createStripe } from './stripe.js';
 
 const missing = checkConfig(config);
@@ -23,16 +23,10 @@ const store = createCacheStore(pool);
 const budget = createBudget({ perMinute: config.creditsPerMinute, perDay: config.creditsPerDay });
 const provider = createProvider(config, { budget });
 
-// Takt passt sich an: mehr verschiedene Symbole -> seltener, damit das Tages-Budget reicht.
+// Fester Takt: Kurse alle QUOTE_CACHE_SECONDS (Standard 60 s), Charts alle SERIES_CACHE_SECONDS.
 // Gleiche Symbole vieler Uhren kosten nichts extra (gemeinsamer Cache).
 let quotes;
-const SERIES_FACTOR = Math.max(1, Math.round(config.seriesCacheSeconds / config.quoteCacheSeconds));
-const quotePeriod = () => adaptiveSeconds({
-  symbols: quotes?.stats().watched || 1,
-  dailyCredits: config.creditsPerDay > 0 ? config.creditsPerDay - 60 : Infinity,
-  minSeconds: config.quoteCacheSeconds,
-  seriesFactor: SERIES_FACTOR,
-});
+const quotePeriod = () => config.quoteCacheSeconds;
 const STALE = 4 * 86400; // alte Werte notfalls bis zu 4 Tage zeigen (Wochenende, Ausfall)
 
 quotes = createQuoteCache({
@@ -45,12 +39,12 @@ const series = provider.fetchSeries
     provider, store, kind: 'series', method: 'fetchSeries',
     cacheSeconds: config.seriesCacheSeconds, maxBatch: config.batchSize,
     staleSeconds: STALE, missSeconds: 300,
-    isFresh: freshness(() => Math.max(config.seriesCacheSeconds, quotePeriod() * SERIES_FACTOR)),
+    isFresh: freshness(() => config.seriesCacheSeconds),
   })
   : null;
 setInterval(() => {
   const b = budget.stats();
-  console.log(`Credits heute ${b.day}/${b.perDay || '∞'}, Takt ${quotePeriod()} s, Symbole ${quotes.stats().watched}`);
+  console.log(`Credits heute ${b.day}/${b.perDay || '∞'}, Symbole ${quotes.stats().watched}`);
 }, 30 * 60 * 1000).unref();
 const usOnly = config.directoryMarkets !== 'all';
 const directory = createDirectory({
@@ -62,7 +56,7 @@ const directory = createDirectory({
 
 const loaded = await quotes.load() + (series ? await series.load() : 0);
 console.log(`Cache aus Postgres: ${loaded} Einträge`);
-quotes.start(30);        // Vorwärmer: prüft alle 30 s, holt nur, was laut Takt fällig ist
+quotes.start(15);        // Vorwärmer: prüft alle 15 s, holt, was älter als 60 s ist
 series?.start(60);
 directory.init();
 
