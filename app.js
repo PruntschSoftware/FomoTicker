@@ -1,5 +1,5 @@
-import { findDeviceByCode, findDeviceByToken, registerDevice, saveSubscription } from './db.js';
-import { activatePage, alreadyActivePage, errorPage, freePage, successPage } from './pages.js';
+import { findDeviceByCode, findDeviceByToken, getWatchlist, registerDevice, saveSubscription, saveWatchlist } from './db.js';
+import { activatePage, alreadyActivePage, errorPage, freePage, successPage, watchlistCodePage, watchlistPage } from './pages.js';
 import { parseSymbols } from './quotes.js';
 import { verifyWebhook } from './stripe.js';
 
@@ -52,9 +52,43 @@ function createLimiter(limit, windowMs) {
   };
 }
 
-export function createApp({ cfg, pool, quotes, stripe, log = console }) {
+// Kursverlauf auf 0..100 skalieren (inkl. Vortagslinie), damit die Uhr nur kleine Ganzzahlen bekommt
+export function normalizeSeries(values, prevClose) {
+  const all = prevClose > 0 ? [...values, prevClose] : values;
+  const lo = Math.min(...all);
+  const hi = Math.max(...all);
+  const span = hi - lo || 1;
+  const scale = (v) => Math.round(((v - lo) / span) * 100);
+  return { sp: values.map(scale), pc: prevClose > 0 ? scale(prevClose) : -1 };
+}
+
+const CODE_RE = /^[A-Z0-9]{6}$/;
+
+function cleanWatchlist(items, max) {
+  if (!Array.isArray(items)) return null;
+  const out = [];
+  const seen = new Set();
+  for (const it of items) {
+    const k = String(it?.k || '').toUpperCase();
+    const [sym] = k.split('@');
+    if (!parseSymbols(k, 1).length || seen.has(k)) continue;
+    seen.add(k);
+    out.push({
+      k,
+      s: String(it?.s || sym).toUpperCase().slice(0, 20),
+      n: String(it?.n || '').slice(0, 80),
+      x: String(it?.x || '').slice(0, 40),
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+export function createApp({ cfg, pool, quotes, series = null, directory = null, stripe, log = console }) {
   const registerLimit = createLimiter(20, 60 * 60 * 1000);
   const activateLimit = createLimiter(30, 60 * 60 * 1000);
+  const searchLimit = createLimiter(240, 60 * 1000);
+  const codeLimit = createLimiter(60, 60 * 60 * 1000);
   const shortUrl = (cfg.displayUrl || cfg.publicUrl).replace(/^https?:\/\//, '').replace(/\/+$/, '');
 
   const paywall = cfg.paywallEnabled;
@@ -103,25 +137,54 @@ export function createApp({ cfg, pool, quotes, stripe, log = console }) {
       return json(res, 200, { st: 'pay', code: device.pair_code, url: shortUrl });
     }
 
-    const symbols = parseSymbols(url.searchParams.get('s'), cfg.maxSymbols);
+    // Watchlist von der Webseite hat Vorrang vor den Symbolen aus den Uhr-Einstellungen
+    const wl = await getWatchlist(pool, device.id);
+    const fromWeb = Array.isArray(wl) && wl.length > 0;
+    const symbols = fromWeb
+      ? wl.map((w) => w.k).slice(0, cfg.maxSymbols)
+      : parseSymbols(url.searchParams.get('s'), cfg.maxSymbols);
     if (symbols.length === 0) return json(res, 400, { error: 'keine gültigen Symbole' });
 
-    let q;
+    let raw;
     try {
-      q = await quotes.get(symbols);
+      raw = await quotes.get(symbols);
     } catch (err) {
       log.error('Kursabruf fehlgeschlagen:', err.message);
       return json(res, 502, { error: 'Datenquelle nicht erreichbar' });
     }
-    return json(res, 200, {
+
+    let ser = {};
+    if (series && url.searchParams.get('sp') !== '0') {
+      try { ser = await series.get(symbols); } catch { ser = {}; }
+    }
+
+    const q = {};
+    const n = {};
+    const sp = {};
+    const pc = {};
+    for (const k of symbols) {
+      const r = raw[k];
+      if (!r) continue;
+      q[k] = r.slice(0, 7);
+      const name = (fromWeb && wl.find((w) => w.k === k)?.n) || r[7] || directory?.lookup(k)?.name || '';
+      if (name) n[k] = name;
+      if (Array.isArray(ser[k]) && ser[k].length >= 2) {
+        const norm = normalizeSeries(ser[k], r[6]);
+        sp[k] = norm.sp;
+        pc[k] = norm.pc;
+      }
+    }
+    const body = {
       st: 'ok',
       src: quotes.source,
       code: device.pair_code,
       url: shortUrl,
       trial: a.trial,
       free: !paywall,
-      q,
-    });
+      q, n, sp, pc,
+    };
+    if (fromWeb) body.syms = symbols;
+    return json(res, 200, body);
   }
 
   async function handleActivate(req, res) {
@@ -187,6 +250,39 @@ export function createApp({ cfg, pool, quotes, stripe, log = console }) {
     return json(res, 200, { received: true });
   }
 
+  async function deviceForCode(req, code) {
+    if (!CODE_RE.test(code)) return null;
+    if (!codeLimit(clientIp(req))) {
+      throw Object.assign(new Error('zu viele Versuche'), { status: 429 });
+    }
+    return findDeviceByCode(pool, code);
+  }
+
+  async function handleWatchlistApi(req, res, code) {
+    const device = await deviceForCode(req, code);
+    if (!device) return json(res, 404, { error: 'Code nicht gefunden' });
+    if (req.method === 'GET') {
+      return json(res, 200, { items: (await getWatchlist(pool, device.id)) || [], max: cfg.maxSymbols });
+    }
+    let data;
+    try {
+      data = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+    } catch {
+      return json(res, 400, { error: 'ungültiges JSON' });
+    }
+    const items = cleanWatchlist(data.items, cfg.maxSymbols);
+    if (!items) return json(res, 400, { error: 'items fehlt' });
+    await saveWatchlist(pool, device.id, items);
+    return json(res, 200, { ok: true, items });
+  }
+
+  function handleSearch(req, res, url) {
+    if (!searchLimit(clientIp(req))) return json(res, 429, { error: 'zu viele Anfragen' });
+    const q = String(url.searchParams.get('q') || '').slice(0, 60);
+    const results = directory ? directory.search(q, 12) : [];
+    return send(res, 200, { results, ready: (directory?.size || 0) > 0 }, 'application/json; charset=utf-8');
+  }
+
   return async function handler(req, res) {
     const url = new URL(req.url, 'http://localhost');
     const route = `${req.method} ${url.pathname}`;
@@ -210,8 +306,24 @@ export function createApp({ cfg, pool, quotes, stripe, log = console }) {
         case 'POST /stripe/webhook':
           if (!stripe) return json(res, 404, { error: 'Abo nicht aktiviert' });
           return await handleWebhook(req, res);
-        default:
+        case 'GET /w':
+          return html(res, 200, watchlistCodePage(cfg, { code: (url.searchParams.get('code') || '').toUpperCase().slice(0, 6) }));
+        case 'GET /api/search':
+          return handleSearch(req, res, url);
+        default: {
+          const page = url.pathname.match(/^\/w\/([A-Za-z0-9]{6})$/);
+          if (page && req.method === 'GET') {
+            const code = page[1].toUpperCase();
+            const device = await deviceForCode(req, code);
+            if (!device) return html(res, 404, watchlistCodePage(cfg, { code, error: 'Code nicht gefunden. Bitte auf der Uhr prüfen.' }));
+            return html(res, 200, watchlistPage(cfg, { code, max: cfg.maxSymbols }));
+          }
+          const api = url.pathname.match(/^\/api\/watchlist\/([A-Za-z0-9]{6})$/);
+          if (api && (req.method === 'GET' || req.method === 'PUT')) {
+            return await handleWatchlistApi(req, res, api[1].toUpperCase());
+          }
           return json(res, 404, { error: 'nicht gefunden' });
+        }
       }
     } catch (err) {
       log.error(`${route} fehlgeschlagen:`, err);

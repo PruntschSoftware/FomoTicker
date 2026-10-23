@@ -24,6 +24,18 @@ export async function migrate(pool) {
       last_seen_at           TIMESTAMPTZ
     )
   `);
+  // Watchlist von der Webseite: [{ k: "SAP@XETR", s: "SAP", n: "SAP SE", x: "XETRA" }, ...]
+  await pool.query(`ALTER TABLE devices ADD COLUMN IF NOT EXISTS watchlist JSONB`);
+  // Kurs-/Chart-/Verzeichnis-Cache, übersteht Deploys
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS quote_cache (
+      kind TEXT NOT NULL,
+      key  TEXT NOT NULL,
+      at   TIMESTAMPTZ NOT NULL,
+      data JSONB NOT NULL,
+      PRIMARY KEY (kind, key)
+    )
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_state (
       key   TEXT PRIMARY KEY,
@@ -116,6 +128,48 @@ export async function findDeviceByCode(pool, code) {
     [code],
   );
   return rows[0] || null;
+}
+
+/** Cache-Speicher für createQuoteCache und das Symbolverzeichnis. */
+export function createCacheStore(pool) {
+  return {
+    async load(kind, maxAgeSeconds) {
+      const { rows } = await pool.query(
+        `SELECT key, (EXTRACT(EPOCH FROM at) * 1000)::bigint AS ms, data
+           FROM quote_cache
+          WHERE kind = $1 AND at > now() - make_interval(secs => $2::int)`,
+        [kind, Math.round(maxAgeSeconds)],
+      );
+      return rows.map((r) => ({ key: r.key, at: Number(r.ms), value: r.data }));
+    },
+    async save(kind, entries) {
+      if (!entries.length) return;
+      await pool.query(
+        `INSERT INTO quote_cache (kind, key, at, data)
+         SELECT $1, x.k, to_timestamp(x.t / 1000.0), x.d
+           FROM jsonb_to_recordset($2::jsonb) AS x(k text, t bigint, d jsonb)
+         ON CONFLICT (kind, key) DO UPDATE SET at = EXCLUDED.at, data = EXCLUDED.data
+         RETURNING key`,
+        [kind, JSON.stringify(entries.map((e) => ({ k: e.key, t: e.at, d: e.value })))],
+      );
+    },
+  };
+}
+
+export async function getWatchlist(pool, deviceId) {
+  const { rows } = await pool.query(
+    `SELECT watchlist FROM devices WHERE id = $1::bigint`,
+    [deviceId],
+  );
+  const wl = rows[0]?.watchlist;
+  return Array.isArray(wl) ? wl : null;
+}
+
+export async function saveWatchlist(pool, deviceId, list) {
+  await pool.query(
+    `UPDATE devices SET watchlist = $2::jsonb WHERE id = $1::bigint RETURNING id`,
+    [deviceId, JSON.stringify(list)],
+  );
 }
 
 /** Abo-Daten aus Stripe übernehmen (per Geräte-ID oder bekannter Abo-ID). */

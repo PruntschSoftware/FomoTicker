@@ -20,7 +20,7 @@ export const config = {
   // Kurze Adresse für die Uhr (z. B. eigene Domain "ticker.deinname.at")
   displayUrl: env.DISPLAY_URL,
 
-  appName: env.APP_NAME || 'Aktien Ticker',
+  appName: env.APP_NAME || 'StockTicker',
   // false = App kostenlos (Start-Phase), true = Testzeit + Stripe-Abo
   paywallEnabled: bool(env.PAYWALL_ENABLED, false),
   priceLabel: env.PRICE_LABEL || '1 € / Monat',
@@ -29,6 +29,11 @@ export const config = {
 
   quoteProvider: env.QUOTE_PROVIDER || 'twelvedata',
   quoteCacheSeconds: num(env.QUOTE_CACHE_SECONDS, 60),
+  seriesCacheSeconds: num(env.SERIES_CACHE_SECONDS, 900),
+  // Credits pro Minute beim Datenanbieter (Twelve Data Basic: 8), 0 = unbegrenzt
+  creditsPerMinute: num(env.CREDITS_PER_MINUTE, 8),
+  // Symbole pro Sammelabruf
+  batchSize: num(env.BATCH_SIZE, 8),
   twelveData: {
     apiKey: env.TWELVEDATA_API_KEY,
     baseUrl: env.TWELVEDATA_BASE_URL || 'https://api.twelvedata.com',
