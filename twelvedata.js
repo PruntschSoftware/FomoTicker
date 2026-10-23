@@ -64,7 +64,6 @@ const PRIO = {
 };
 
 export function createTwelveData({ apiKey, baseUrl, budget = null, directoryDelayMs = 0, markets = 'us' }) {
-  if (!apiKey) throw new Error('TWELVEDATA_API_KEY fehlt');
   const DIRECTORY_JOBS = markets === 'all' ? WORLD_JOBS : US_JOBS;
 
   async function get(path, params, { cost = 1, prio = 'quote', timeoutMs = 15000 } = {}) {
@@ -125,6 +124,8 @@ export function createTwelveData({ apiKey, baseUrl, budget = null, directoryDela
 
   return {
     name: 'Twelve Data',
+    configured: Boolean(apiKey),
+    extendedHours: false,
 
     // Kursverlauf für das Mini-Chart (wird länger gecacht als die Kurse)
     async fetchSeries(keys) {

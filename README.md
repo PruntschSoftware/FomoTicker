@@ -16,10 +16,20 @@ und kann später ein Abo verwalten. **Standard: kostenlos** – Bezahlen ist aus
 ## Deploy auf Railway
 1. Repo verbinden, Postgres hinzufügen.
 2. Variablen aus `.env.example` setzen (für den Gratis-Start reichen `DATABASE_URL`,
-   `PUBLIC_URL`, `DISPLAY_URL`, `QUOTE_PROVIDER`, `TWELVEDATA_API_KEY`).
+   `PUBLIC_URL`, `DISPLAY_URL`, `PROVIDERS` und die Schlüssel der Anbieter, siehe `.env.example`).
 3. `/health` muss `{"ok":true}` liefern.
 
-`QUOTE_PROVIDER=mock` liefert Spieldaten – praktisch für den Simulator.
+`PROVIDERS=mock` liefert Spieldaten – praktisch für den Simulator.
+
+## Datenanbieter
+
+Jeder Anbieter ist eine Datei (`alpaca.js`, `twelvedata.js`, `finnhub.js`, `mock.js`) und ein
+Eintrag in `REGISTRY` (`providers.js`). Ein Anbieter liefert, was er kann: `fetchQuotes` (Kurse,
+optional mit Vor-/Nachbörse), `fetchSeries` (Tageschart), `loadDirectory` (Suche).
+`PROVIDERS=alpaca,twelvedata` nimmt je Aufgabe den ersten passenden; fehlen die
+Schlüssel eines Anbieters, wird er übersprungen. Jeder Anbieter hat sein eigenes Limit.
+
+Die Uhr bekommt Vor-/Nachbörse als `x: { KEY: [kurs, prozent, "pre"|"post"] }`.
 
 ## Später: Abo einschalten
 `PAYWALL_ENABLED=true` plus Stripe-Variablen. Beim ersten Start damit bekommen alle

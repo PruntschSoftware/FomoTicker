@@ -1,6 +1,8 @@
 // Spieldaten für lokale Tests und den Garmin-Simulator (QUOTE_PROVIDER=mock).
 // Symbole, die mit "ZZ" beginnen, gelten als unbekannt.
 
+import { usSession } from './market.js';
+
 function seed(symbol) {
   let h = 0;
   for (const ch of symbol) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -10,6 +12,8 @@ function seed(symbol) {
 export function createMock() {
   return {
     name: 'Testdaten',
+    configured: true,
+    extendedHours: true,
     async fetchQuotes(symbols) {
       const out = {};
       const minute = Math.floor(Date.now() / 60000);
@@ -24,7 +28,15 @@ export function createMock() {
           r(price), r(price - prev), r(pct),
           r(prev * 1.002), r(Math.max(price, prev) * 1.01), r(Math.min(price, prev) * 0.99), r(prev),
           (MOCK_DIRECTORY.find((d) => d[0] === symbol.split('@')[0]) || [])[1] || '',
+          0, 0, '',
         ];
+        const sess = usSession();
+        if (!symbol.includes('@') && (sess === 'pre' || sess === 'post')) {
+          const ep = (((s >> 3) + minute) % 300 - 150) / 100;
+          out[symbol][8] = r(price * (1 + ep / 100));
+          out[symbol][9] = r(ep);
+          out[symbol][10] = sess;
+        }
       }
       return out;
     },

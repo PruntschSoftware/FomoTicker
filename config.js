@@ -68,6 +68,5 @@ export function checkConfig(cfg = config) {
     if (!cfg.stripe.webhookSecret) missing.push('STRIPE_WEBHOOK_SECRET');
     if (!cfg.stripe.priceId) missing.push('STRIPE_PRICE_ID');
   }
-  if (cfg.quoteProvider === 'twelvedata' && !cfg.twelveData.apiKey) missing.push('TWELVEDATA_API_KEY');
   return missing;
 }

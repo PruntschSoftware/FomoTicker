@@ -162,10 +162,13 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
     const n = {};
     const sp = {};
     const pc = {};
+    const x = {};
     for (const k of symbols) {
       const r = raw[k];
       if (!r) continue;
       q[k] = r.slice(0, 7);
+      // Vor-/Nachbörse: [kurs, änderung% gegen Schluss, "pre"|"post"]
+      if (r[10] && r[8] > 0) x[k] = [r[8], r[9], r[10]];
       const name = (fromWeb && wl.find((w) => w.k === k)?.n) || r[7] || directory?.lookup(k)?.name || '';
       if (name) n[k] = name;
       if (Array.isArray(ser[k]) && ser[k].length >= 2) {
@@ -183,6 +186,7 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
       free: !paywall,
       q, n, sp, pc,
     };
+    if (Object.keys(x).length) body.x = x;
     if (fromWeb) body.syms = symbols;
     return json(res, 200, body);
   }
