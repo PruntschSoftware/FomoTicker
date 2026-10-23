@@ -39,9 +39,17 @@ function toQuote(item) {
 }
 
 // Verlauf: neueste zuerst -> älteste zuerst, nur Schlusskurse
+// Nur der jüngste Handelstag (Tagesverlauf); erst ab 2 Punkten, sonst der ganze Zeitraum
 function toSeries(item) {
   if (!item || item.status === 'error' || !Array.isArray(item.values)) return null;
-  const closes = item.values.map((v) => num(v.close)).filter((n) => n > 0).reverse();
+  const rows = item.values
+    .map((v) => ({ d: String(v.datetime || '').slice(0, 10), c: num(v.close) }))
+    .filter((r) => r.c > 0)
+    .reverse();
+  const lastDay = rows.length ? rows[rows.length - 1].d : '';
+  const today = rows.filter((r) => r.d === lastDay);
+  const pick = lastDay && today.length >= 2 ? today : rows;
+  const closes = pick.map((r) => r.c);
   return closes.length >= 2 ? closes : null;
 }
 
@@ -177,3 +185,5 @@ export function createTwelveData({ apiKey, baseUrl, budget = null, directoryDela
     },
   };
 }
+
+export { toSeries }; // für Tests
