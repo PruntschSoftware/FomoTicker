@@ -15,12 +15,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Börsen, deren Aktien (bzw. ETFs) für die Suche geladen werden.
 // Twelve Data Basic (gratis) liefert nur US-Kurse -> standardmäßig nur US.
-const US_JOBS = [['stocks', 'XNAS'], ['stocks', 'XNYS'], ['etfs', 'ARCX'], ['etfs', 'XNAS']];
+// US per Land (Nasdaq-Werte führt Twelve Data unter XNGS/XNMS/XNCM, nicht XNAS);
+// OTC wird später über die Börsenliste aussortiert.
+const US = { country: 'United States' };
+const US_JOBS = [['stocks', US], ['etfs', US]];
 const WORLD_JOBS = [
   ...US_JOBS,
-  ['stocks', 'XETR'], ['etfs', 'XETR'], ['stocks', 'XWBO'], ['stocks', 'XLON'],
-  ['stocks', 'XPAR'], ['stocks', 'XAMS'], ['stocks', 'XSWX'], ['stocks', 'XMIL'],
-  ['stocks', 'XMAD'], ['stocks', 'XSTO'], ['stocks', 'XTSE'],
+  ...[['stocks', 'XETR'], ['etfs', 'XETR'], ['stocks', 'XWBO'], ['stocks', 'XLON'],
+    ['stocks', 'XPAR'], ['stocks', 'XAMS'], ['stocks', 'XSWX'], ['stocks', 'XMIL'],
+    ['stocks', 'XMAD'], ['stocks', 'XSTO'], ['stocks', 'XTSE']].map(([k, mic]) => [k, { mic_code: mic }]),
 ];
 
 function toQuote(item) {
@@ -56,12 +59,12 @@ export function createTwelveData({ apiKey, baseUrl, budget = null, directoryDela
   if (!apiKey) throw new Error('TWELVEDATA_API_KEY fehlt');
   const DIRECTORY_JOBS = markets === 'all' ? WORLD_JOBS : US_JOBS;
 
-  async function get(path, params, { cost = 1, prio = 'quote' } = {}) {
+  async function get(path, params, { cost = 1, prio = 'quote', timeoutMs = 15000 } = {}) {
     if (budget) await budget.acquire(cost, PRIO[prio]);
     const url = new URL(path, baseUrl);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     url.searchParams.set('apikey', apiKey);
-    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) throw new Error(`Twelve Data HTTP ${res.status}`);
     return res.json();
   }
@@ -150,10 +153,11 @@ export function createTwelveData({ apiKey, baseUrl, budget = null, directoryDela
     async loadDirectory() {
       const all = [];
       for (let i = 0; i < DIRECTORY_JOBS.length; i++) {
-        const [kind, mic] = DIRECTORY_JOBS[i];
+        const [kind, params] = DIRECTORY_JOBS[i];
         if (i > 0 && directoryDelayMs) await sleep(directoryDelayMs);
         try {
-          const body = await get(`/${kind}`, { mic_code: mic }, { cost: 1, prio: 'directory' });
+          const body = await get(`/${kind}`, params, { cost: 1, prio: 'directory', timeoutMs: 90000 });
+          const mic = params.mic_code || '';
           for (const r of body?.data || []) {
             all.push({
               symbol: r.symbol,
@@ -164,8 +168,9 @@ export function createTwelveData({ apiKey, baseUrl, budget = null, directoryDela
               type: kind === 'etfs' ? 'ETF' : r.type,
             });
           }
-        } catch {
+        } catch (err) {
           // eine Börse fehlt -> Rest trotzdem nutzen
+          console.warn(`Verzeichnis ${kind} ${JSON.stringify(params)}: ${err.message}`);
         }
       }
       return all;

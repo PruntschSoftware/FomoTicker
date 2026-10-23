@@ -4,7 +4,7 @@ import { checkConfig, config } from './config.js';
 import { createCacheStore, createPool, migrate, startPaywallOnce } from './db.js';
 import { createProvider } from './providers.js';
 import { createBudget, createQuoteCache } from './quotes.js';
-import { createDirectory } from './directory.js';
+import { createDirectory, US_MICS } from './directory.js';
 import { adaptiveSeconds, freshness } from './market.js';
 import { createStripe } from './stripe.js';
 
@@ -52,7 +52,13 @@ setInterval(() => {
   const b = budget.stats();
   console.log(`Credits heute ${b.day}/${b.perDay || '∞'}, Takt ${quotePeriod()} s, Symbole ${quotes.stats().watched}`);
 }, 30 * 60 * 1000).unref();
-const directory = createDirectory({ loader: () => provider.loadDirectory?.() ?? [], store });
+const usOnly = config.directoryMarkets !== 'all';
+const directory = createDirectory({
+  loader: () => provider.loadDirectory?.() ?? [],
+  store,
+  storeKey: usOnly ? 'us-v2' : 'all-v2',
+  filter: usOnly ? (r) => US_MICS.has(r.mic) : (r) => !/^(OTC|PINX|PSGM|EXPM)/.test(r.mic || ''),
+});
 
 const loaded = await quotes.load() + (series ? await series.load() : 0);
 console.log(`Cache aus Postgres: ${loaded} Einträge`);

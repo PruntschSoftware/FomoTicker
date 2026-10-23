@@ -8,12 +8,12 @@ export const US_MICS = new Set(['XNAS', 'XNYS', 'XASE', 'ARCX', 'BATS', 'XNMS', 
 
 // Gewichtung für die Sortierung (bekannte Börsen zuerst)
 const MIC_RANK = {
-  XNAS: 10, XNYS: 10, ARCX: 8, XETR: 9, XWBO: 8, XLON: 7, XPAR: 7, XAMS: 7,
+  XNAS: 10, XNGS: 10, XNMS: 10, XNCM: 9, XNYS: 10, ARCX: 8, XASE: 7, BATS: 7, XETR: 9, XWBO: 8, XLON: 7, XPAR: 7, XAMS: 7,
   XSWX: 7, XMIL: 6, XMAD: 6, XSTO: 6, XTSE: 6, XHKG: 5, XTKS: 5, XASX: 5,
 };
 
 const MIC_NAME = {
-  XNAS: 'NASDAQ', XNYS: 'NYSE', ARCX: 'NYSE Arca', XASE: 'NYSE American', BATS: 'Cboe',
+  XNAS: 'NASDAQ', XNGS: 'NASDAQ', XNMS: 'NASDAQ', XNCM: 'NASDAQ', XNYS: 'NYSE', ARCX: 'NYSE Arca', XASE: 'NYSE American', BATS: 'Cboe',
   XETR: 'Xetra', XFRA: 'Frankfurt', XWBO: 'Wien', XLON: 'London', XPAR: 'Paris', XAMS: 'Amsterdam',
   XSWX: 'SIX Swiss', XMIL: 'Mailand', XMAD: 'Madrid', XSTO: 'Stockholm', XTSE: 'Toronto',
 };
@@ -40,7 +40,11 @@ const norm = (s) => String(s || '')
   .replace(/[^a-z0-9. ]+/g, ' ')
   .trim();
 
-export function createDirectory({ loader, store = null, log = console, refreshHours = 24 }) {
+export function createDirectory({
+  loader, store = null, log = console, refreshHours = 24,
+  filter = null,       // optional (rohEintrag) -> bool, z. B. nur US-Börsen
+  storeKey = 'all',    // Schlüssel im Cache; neuer Schlüssel = Verzeichnis neu laden
+}) {
   let entries = [];   // { key, symbol, name, exchange, mic, country, type, _s, _n }
   let loadedAt = 0;
   let loading = null;
@@ -50,6 +54,7 @@ export function createDirectory({ loader, store = null, log = console, refreshHo
     const next = [];
     for (const r of raw) {
       if (!r?.symbol || !r?.name) continue;
+      if (filter && !filter(r)) continue;
       const key = keyFor(r.symbol, r.mic);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -80,7 +85,7 @@ export function createDirectory({ loader, store = null, log = console, refreshHo
           loadedAt = Date.now();
           log.info?.(`Symbolverzeichnis geladen: ${next.length} Einträge`);
           if (store) {
-            await store.save('directory', [{ key: 'all', at: loadedAt, value: raw }])
+            await store.save('directory', [{ key: storeKey, at: loadedAt, value: filter ? raw.filter((r) => r && filter(r)) : raw }])
               .catch((err) => log.warn?.('Verzeichnis speichern:', err.message));
           }
         }
@@ -113,7 +118,8 @@ export function createDirectory({ loader, store = null, log = console, refreshHo
   async function init() {
     if (store) {
       try {
-        const [row] = await store.load('directory', refreshHours * 3600 * 7);
+        const rows = await store.load('directory', refreshHours * 3600 * 7);
+        const row = rows.find((r) => r.key === storeKey);
         if (row?.value?.length) {
           entries = build(row.value);
           loadedAt = row.at;
