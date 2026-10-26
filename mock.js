@@ -14,6 +14,7 @@ export function createMock() {
     name: 'Testdaten',
     configured: true,
     extendedHours: true,
+    mics: new Set(['XETR', 'XWBO']),
     async fetchQuotes(symbols) {
       const out = {};
       const minute = Math.floor(Date.now() / 60000);

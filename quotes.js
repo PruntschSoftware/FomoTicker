@@ -128,6 +128,10 @@ export function createQuoteCache({
 
   const api = {
     source: provider.name,
+    // Quelle für bestimmte Werte (bei mehreren Anbietern nur die tatsächlich genutzten)
+    sourceFor: (keys) => (provider.sourceOf
+      ? [...new Set(keys.map((k) => provider.sourceOf(k)).filter(Boolean))].join(' / ')
+      : provider.name),
 
     /** Gespeicherte Werte aus Postgres laden (beim Start). */
     async load() {

@@ -107,6 +107,104 @@ export function barsToSeries(bars) {
   return day.length >= 2 ? day : null;
 }
 
+/** Reguläre Bars (9:30–16:00) eines Symbols nach New Yorker Handelstag gruppiert, aufsteigend. */
+export function regularDays(bars) {
+  const days = new Map();
+  for (const b of Array.isArray(bars) ? bars : []) {
+    const t = Date.parse(b.t);
+    const c = num(b.c);
+    if (!(t > 0) || !(c > 0)) continue;
+    const m = nyMinute(t);
+    if (m < REG_OPEN || m >= REG_CLOSE) continue;
+    const d = nyDay(t);
+    if (!days.has(d)) days.set(d, []);
+    days.get(d).push({ t, o: num(b.o) || c, h: num(b.h) || c, l: num(b.l) || c, c });
+  }
+  const out = [...days.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  for (const [, rows] of out) rows.sort((a, b) => a.t - b.t);
+  return out; // [[tag, [bars]], …]
+}
+
+/**
+ * Kurs aus Snapshot + regulären 15-Min-Bars. Der Tagesbalken von Alpaca enthält auch
+ * Vor-/Nachbörse – deshalb wird der reguläre Schluss selbst aus den Bars bestimmt.
+ *  regulär:     letzter Trade gegen Schluss des Vortags
+ *  sonst:       Schluss des letzten Handelstags gegen den Tag davor,
+ *               dazu Vorbörse (heutige Trades vor 9:30) bzw. Nachbörse (nach 16:00)
+ */
+export function buildQuote(snap, bars, now = Date.now()) {
+  const days = regularDays(bars);
+  if (days.length === 0) return snapshotToQuote(snap, now); // ohne Bars: alte Logik
+  const today = nyDay(now);
+  const session = usSession(now);
+  const lt = snap?.latestTrade;
+  const ltP = num(lt?.p);
+  const ltT = lt?.t ? Date.parse(lt.t) : 0;
+  const tDay = ltT ? nyDay(ltT) : '';
+  const tMin = ltT ? nyMinute(ltT) : -1;
+  const closeOf = (rows) => rows[rows.length - 1].c;
+
+  const last = days[days.length - 1];
+  let price;
+  let prev;
+  let o;
+  let h;
+  let l;
+  let lastDay;
+  if (session === 'regular') {
+    const todayRows = last[0] === today ? last[1] : [];
+    const before = last[0] === today ? days[days.length - 2] : last;
+    prev = before ? closeOf(before[1]) : 0;
+    price = ltP > 0 && tDay === today ? ltP : todayRows.length ? closeOf(todayRows) : prev;
+    o = todayRows.length ? todayRows[0].o : price;
+    h = Math.max(price, ...todayRows.map((r) => r.h));
+    l = Math.min(price, ...todayRows.map((r) => r.l));
+    lastDay = today;
+  } else {
+    lastDay = last[0];
+    price = closeOf(last[1]);
+    const before = days[days.length - 2];
+    prev = before ? closeOf(before[1]) : num(snap?.prevDailyBar?.c);
+    o = last[1][0].o;
+    h = Math.max(...last[1].map((r) => r.h));
+    l = Math.min(...last[1].map((r) => r.l));
+  }
+  if (!(price > 0)) return null;
+  const change = prev > 0 ? price - prev : 0;
+  const pct = prev > 0 ? (change / prev) * 100 : 0;
+
+  // Vor-/Nachbörse
+  let extPrice = 0;
+  let extSession = '';
+  if (session === 'pre') {
+    // nur heutige Trades vor der Eröffnung; sonst Mitte aus Geld/Brief, wenn eng und von heute
+    if (ltP > 0 && tDay === today && tMin < REG_OPEN) {
+      extPrice = ltP;
+    } else {
+      const q = snap?.latestQuote;
+      const bid = num(q?.bp);
+      const ask = num(q?.ap);
+      const qT = q?.t ? Date.parse(q.t) : 0;
+      if (bid > 0 && ask >= bid && (ask - bid) / bid < 0.01 && qT && nyDay(qT) === today && nyMinute(qT) < REG_OPEN) {
+        extPrice = (bid + ask) / 2;
+      }
+    }
+    if (extPrice > 0) extSession = 'pre';
+  } else if (session !== 'regular' && ltP > 0 && ltT) {
+    // Nachbörse: Trade nach 16:00 am letzten Handelstag (bzw. danach, aber nicht heute vor 9:30)
+    const after = (tDay === lastDay && tMin >= REG_CLOSE) || (tDay > lastDay && !(tDay === today && tMin < REG_OPEN));
+    if (after) {
+      extPrice = ltP;
+      extSession = 'post';
+    }
+  }
+  const extPct = extPrice > 0 ? ((extPrice - price) / price) * 100 : 0;
+  return [
+    round(price), round(change), round(pct), round(o), round(h), round(l), round(prev),
+    '', round(extPrice), round(extPct), extSession,
+  ];
+}
+
 export function createAlpaca({ keyId, secretKey, dataUrl, tradingUrl, feed = 'iex', budget = null }) {
   const configured = Boolean(keyId && secretKey);
 
@@ -130,19 +228,52 @@ export function createAlpaca({ keyId, secretKey, dataUrl, tradingUrl, feed = 'ie
 
   const usOnly = (keys) => keys.filter((k) => !String(k).includes('@'));
 
+  // 15-Min-Bars der letzten Tage (6 Tage reichen über Wochenende + Feiertag)
+  async function fetchBars(syms, prio) {
+    const start = new Date(Date.now() - 6 * 86400 * 1000).toISOString();
+    const all = {};
+    let pageToken;
+    for (let page = 0; page < 8; page++) {
+      const body = await get(dataUrl, '/v2/stocks/bars', {
+        symbols: syms.join(','), timeframe: '15Min', start, feed, limit: 10000, adjustment: 'raw', page_token: pageToken,
+      }, { prio });
+      for (const [s, list] of Object.entries(body?.bars || {})) {
+        (all[s] ||= []).push(...list);
+      }
+      pageToken = body?.next_page_token;
+      if (!pageToken) break;
+    }
+    return all;
+  }
+
+  // Bars für die Schlusskurse: höchstens alle 5 Minuten neu (ändern sich nur im Handel)
+  let ref = { at: 0, syms: new Set(), bars: {} };
+  async function refBars(syms) {
+    const fresh = Date.now() - ref.at < 5 * 60 * 1000 && syms.every((s) => ref.syms.has(s));
+    if (fresh) return ref.bars;
+    const bars = await fetchBars(syms, 'quote');
+    ref = { at: Date.now(), syms: new Set(syms), bars };
+    return bars;
+  }
+
   return {
     name: 'Alpaca (IEX)',
     configured,
     extendedHours: true,
+    supports: (key) => !String(key).includes('@'),
 
     async fetchQuotes(keys) {
       const syms = usOnly(keys);
       if (syms.length === 0) return {};
-      const body = await get(dataUrl, '/v2/stocks/snapshots', { symbols: syms.join(','), feed });
+      const [body, bars] = await Promise.all([
+        get(dataUrl, '/v2/stocks/snapshots', { symbols: syms.join(','), feed }),
+        refBars(syms).catch(() => ({})),
+      ]);
       const snaps = body?.snapshots || body || {};
       const out = {};
       for (const s of syms) {
-        const q = snapshotToQuote(snaps[s]);
+        if (!snaps[s]) continue;
+        const q = buildQuote(snaps[s], bars[s]);
         if (q) out[s] = q;
       }
       return out;
@@ -151,20 +282,7 @@ export function createAlpaca({ keyId, secretKey, dataUrl, tradingUrl, feed = 'ie
     async fetchSeries(keys) {
       const syms = usOnly(keys);
       if (syms.length === 0) return {};
-      // 4 Tage zurück reicht über Wochenende/Feiertag; danach nur der letzte Handelstag
-      const start = new Date(Date.now() - 4 * 86400 * 1000).toISOString();
-      const all = {};
-      let pageToken;
-      for (let page = 0; page < 5; page++) {
-        const body = await get(dataUrl, '/v2/stocks/bars', {
-          symbols: syms.join(','), timeframe: '15Min', start, feed, limit: 10000, adjustment: 'raw', page_token: pageToken,
-        }, { prio: 'series' });
-        for (const [s, bars] of Object.entries(body?.bars || {})) {
-          (all[s] ||= []).push(...bars);
-        }
-        pageToken = body?.next_page_token;
-        if (!pageToken) break;
-      }
+      const all = await fetchBars(syms, 'series');
       const out = {};
       for (const s of syms) {
         const v = barsToSeries(all[s]);

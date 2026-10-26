@@ -179,7 +179,7 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
     }
     const body = {
       st: 'ok',
-      src: quotes.source,
+      src: quotes.sourceFor ? quotes.sourceFor(Object.keys(q)) : quotes.source,
       code: device.pair_code,
       url: shortUrl,
       trial: a.trial,

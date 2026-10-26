@@ -43,6 +43,7 @@ export function createFinnhub({ apiKey, baseUrl, budget = null }) {
     name: 'Finnhub',
     configured,
     extendedHours: false,
+    supports: (key) => !String(key).includes('@'),
 
     async fetchQuotes(keys) {
       const syms = keys.filter((k) => !String(k).includes('@'));

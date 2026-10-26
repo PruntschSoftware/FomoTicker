@@ -126,6 +126,8 @@ export function createTwelveData({ apiKey, baseUrl, budget = null, directoryDela
     name: 'Twelve Data',
     configured: Boolean(apiKey),
     extendedHours: false,
+    // Basic-Plan: nur US; ab Grow (DIRECTORY_MARKETS=all) auch andere Börsen
+    supports: (key) => markets === 'all' || !String(key).includes('@'),
 
     // Kursverlauf für das Mini-Chart (wird länger gecacht als die Kurse)
     async fetchSeries(keys) {

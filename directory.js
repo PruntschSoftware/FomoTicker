@@ -9,13 +9,15 @@ export const US_MICS = new Set(['XNAS', 'XNYS', 'XASE', 'ARCX', 'BATS', 'XNMS', 
 // Gewichtung für die Sortierung (bekannte Börsen zuerst)
 const MIC_RANK = {
   XNAS: 10, XNGS: 10, XNMS: 10, XNCM: 9, XNYS: 10, ARCX: 8, XASE: 7, BATS: 7, XETR: 9, XWBO: 8, XLON: 7, XPAR: 7, XAMS: 7,
-  XSWX: 7, XMIL: 6, XMAD: 6, XSTO: 6, XTSE: 6, XHKG: 5, XTKS: 5, XASX: 5,
+  XSWX: 7, XMIL: 6, XFRA: 6, XSTU: 6, XMUN: 6, XMAD: 6, XSTO: 6, XTSE: 6, XHKG: 5, XTKS: 5, XASX: 5,
 };
 
 const MIC_NAME = {
   XNAS: 'NASDAQ', XNGS: 'NASDAQ', XNMS: 'NASDAQ', XNCM: 'NASDAQ', XNYS: 'NYSE', ARCX: 'NYSE Arca', XASE: 'NYSE American', BATS: 'Cboe',
   XETR: 'Xetra', XFRA: 'Frankfurt', XWBO: 'Wien', XLON: 'London', XPAR: 'Paris', XAMS: 'Amsterdam',
   XSWX: 'SIX Swiss', XMIL: 'Mailand', XMAD: 'Madrid', XSTO: 'Stockholm', XTSE: 'Toronto',
+  XSTU: 'Stuttgart', XMUN: 'München', XBER: 'Berlin', XHAM: 'Hamburg', XDUS: 'Düsseldorf', XHAN: 'Hannover',
+  XBRU: 'Brüssel', XLIS: 'Lissabon', BMEX: 'Madrid', XCSE: 'Kopenhagen', XOSL: 'Oslo', XHEL: 'Helsinki',
 };
 const COUNTRY_DE = {
   'United States': 'USA', Germany: 'Deutschland', Austria: 'Österreich', 'United Kingdom': 'UK',
@@ -67,6 +69,7 @@ export function createDirectory({
         country: COUNTRY_DE[r.country] || r.country || '',
         type: r.type || '',
         _s: String(r.symbol).toLowerCase(),
+        _i: String(r.isin || '').toLowerCase(),
         _n: norm(r.name),
         _r: (MIC_RANK[r.mic] || 1) + (/etf|fund/i.test(r.type || '') ? 0 : 1),
       });
@@ -104,7 +107,8 @@ export function createDirectory({
 
   function score(e, q, words) {
     let s = 0;
-    if (e._s === q) s = 1000;
+    if (e._i && q.length === 12 && e._i === q) s = 1100; // ISIN, z. B. DE0007164600
+    else if (e._s === q) s = 1000;
     else if (e._s.startsWith(q)) s = 700 - (e._s.length - q.length) * 5;
     else if (e._n === q) s = 650;
     else if (e._n.startsWith(q)) s = 600;

@@ -59,12 +59,14 @@ setInterval(() => {
   console.log(`Credits: ${[...used].map(describe).join(' · ')}, Symbole ${quotes.stats().watched}`);
 }, 30 * 60 * 1000).unref();
 
+// Suche: US-Börsen + die Börsen der konfigurierten Anbieter (z. B. EODHD: Xetra, Wien …)
 const usOnly = config.directoryMarkets !== 'all';
+const allowed = new Set([...US_MICS, ...(dp?.mics || [])]);
 const directory = createDirectory({
   loader: () => dp?.loadDirectory?.() ?? [],
   store,
-  storeKey: usOnly ? 'us-v2' : 'all-v2',
-  filter: usOnly ? (r) => US_MICS.has(r.mic) : (r) => !/^(OTC|PINX|PSGM|EXPM)/.test(r.mic || ''),
+  storeKey: usOnly ? `v3-${[...allowed].sort().join(',')}` : 'all-v3',
+  filter: usOnly ? (r) => allowed.has(r.mic) : (r) => !/^(OTC|PINX|PSGM|EXPM)/.test(r.mic || ''),
 });
 
 const loaded = await quotes.load() + (series ? await series.load() : 0);

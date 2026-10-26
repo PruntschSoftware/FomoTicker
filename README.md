@@ -23,11 +23,12 @@ und kann später ein Abo verwalten. **Standard: kostenlos** – Bezahlen ist aus
 
 ## Datenanbieter
 
-Jeder Anbieter ist eine Datei (`alpaca.js`, `twelvedata.js`, `finnhub.js`, `mock.js`) und ein
+Jeder Anbieter ist eine Datei (`alpaca.js`, `eodhd.js`, `twelvedata.js`, `finnhub.js`, `mock.js`) und ein
 Eintrag in `REGISTRY` (`providers.js`). Ein Anbieter liefert, was er kann: `fetchQuotes` (Kurse,
 optional mit Vor-/Nachbörse), `fetchSeries` (Tageschart), `loadDirectory` (Suche).
-`PROVIDERS=alpaca,twelvedata` nimmt je Aufgabe den ersten passenden; fehlen die
-Schlüssel eines Anbieters, wird er übersprungen. Jeder Anbieter hat sein eigenes Limit.
+`PROVIDERS=alpaca,eodhd,twelvedata` verteilt jeden Wert an den ersten Anbieter, der ihn kann
+(`supports(key)`): US-Aktien an Alpaca, `SAP@XETR` an EODHD. Fällt einer aus, springt der
+nächste ein. Fehlen die Schlüssel eines Anbieters, wird er übersprungen. Jeder Anbieter hat sein eigenes Limit.
 
 Die Uhr bekommt Vor-/Nachbörse als `x: { KEY: [kurs, prozent, "pre"|"post"] }`.
 
