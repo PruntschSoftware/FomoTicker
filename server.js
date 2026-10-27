@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { createApp } from './app.js';
 import { checkConfig, config } from './config.js';
-import { createCacheStore, createPool, deviceStats, migrate, modelStats, startPaywallOnce } from './db.js';
+import { createCacheStore, createPool, deviceStats, migrate, modelStats, startPaywallOnce, updateDaily } from './db.js';
 import { modelName } from './models.js';
 import { createProviders } from './providers.js';
 import { createQuoteCache } from './quotes.js';
@@ -55,13 +55,14 @@ const describe = (p) => {
   const b = p.budget?.stats();
   return b ? `${p.name} ${b.day}/${b.perDay || '∞'} heute` : p.name;
 };
-// Nutzung (nur Summen) ins Log: beim Start und alle 30 Minuten
+// Nutzung (nur Summen) ins Log: beim Start und alle 30 Minuten; schreibt auch den Tagesverlauf fort
 async function logUsage() {
   try {
     const d = await deviceStats(pool);
-    console.log(`Uhren: ${d.total} registriert, davon echt ${d.real}, Entwickler/Simulator ${d.dev}, Test ${d.test}, `
-      + `ohne Modell (App < 1.5) ${d.unknown} | aktiv 24 h: ${d.active_1d}, aktiv 7 Tage: ${d.active_7d}, `
-      + `nie Kurse geladen: ${d.never_loaded}, mit Web-Watchlist: ${d.with_watchlist}, neu in 7 Tagen: ${d.new_7d}`);
+    await updateDaily(pool, 1);
+    console.log(`Uhren: ${d.total} registriert, davon echt ${d.real} (Entwickler/Simulator ${d.dev}, Test ${d.test}) | `
+      + `echt aktiv 1 h: ${d.active_1h}, 24 h: ${d.active_1d}, 7 Tage: ${d.active_7d}, 30 Tage: ${d.active_30d} | `
+      + `neu 24 h: ${d.new_1d}, 7 Tage: ${d.new_7d} | mit Web-Watchlist: ${d.with_watchlist}, ohne Modell (App < 1.5): ${d.unknown}`);
     const models = await modelStats(pool);
     if (models.length) console.log(`Modelle (echt, aktiv 7 Tage): ${models.map((r) => `${modelName(r.part_number)} ${r.n}`).join(', ')}`);
   } catch (err) {
@@ -94,7 +95,9 @@ directory.init();
 
 const stripe = config.paywallEnabled ? createStripe(config) : null;
 
-const server = http.createServer(createApp({ cfg: config, pool, quotes, series, directory, stripe }));
+const handler = createApp({ cfg: config, pool, quotes, series, directory, stripe });
+const server = http.createServer(handler);
+console.log(`Statistik-Dashboard: ${config.publicUrl}/stats?k=${handler.statsKey}`);
 server.listen(config.port, () => {
   console.log(`${config.appName}-Backend läuft auf Port ${config.port} – Kurse: ${qp.name}${qp.extendedHours ? ' (inkl. Vor-/Nachbörse)' : ''}, Charts: ${sp?.name || '–'}, Suche: ${dp?.name || '–'}, ${config.paywallEnabled ? 'Abo aktiv' : 'kostenlos'}`);
 });

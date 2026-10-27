@@ -1,4 +1,7 @@
-import { findDeviceByCode, findDeviceByToken, getWatchlist, noteDeviceInfo, registerDevice, saveSubscription, saveWatchlist } from './db.js';
+import crypto from 'node:crypto';
+import { breakdownStats, deviceStats, findDeviceByCode, findDeviceByToken, getWatchlist, modelStats, noteDeviceInfo, registerDevice, saveSubscription, saveWatchlist, updateDaily } from './db.js';
+import { modelName } from './models.js';
+import { statsPage } from './stats-page.js';
 import { activatePage, alreadyActivePage, errorPage, freePage, successPage, watchlistCodePage, watchlistPage } from './pages.js';
 import { parseSymbols } from './quotes.js';
 import { qrRows } from './qr.js';
@@ -147,12 +150,6 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
     const device = await findDeviceByToken(pool, token);
     if (!device) return json(res, 401, { error: 'Token unbekannt' });
 
-    // Uhrmodell + Entwickler-Build (ab App 1.5) für die Statistik
-    const pn = String(url.searchParams.get('m') || '');
-    if (/^\d{3}-[A-Z0-9]{5}-\d{2}$/.test(pn)) {
-      noteDeviceInfo(pool, device, { partNumber: pn, dev: url.searchParams.get('d') === '1' })
-        .catch((err) => log.warn('Geräteinfo:', err.message));
-    }
 
     // Bewusst Status 200: manche Uhren liefern bei 4xx keinen Body an die App
     const a = access(device);
@@ -167,6 +164,18 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
       ? wl.map((w) => w.k).slice(0, cfg.maxSymbols)
       : parseSymbols(url.searchParams.get('s'), cfg.maxSymbols);
     if (symbols.length === 0) return json(res, 400, { error: 'keine gültigen Symbole' });
+
+    // Für die Statistik (nur Summen): Uhrmodell + Entwickler-Build (ab 1.5), Sprache + Version (ab 1.7), Symbole
+    const pn = String(url.searchParams.get('m') || '');
+    const ln = String(url.searchParams.get('l') || '').toLowerCase();
+    const ver = String(url.searchParams.get('v') || '');
+    noteDeviceInfo(pool, device, {
+      partNumber: /^\d{3}-[A-Z0-9]{5}-\d{2}$/.test(pn) ? pn : null,
+      dev: url.searchParams.get('d') === '1',
+      lang: /^[a-z0-9]{2,5}$/.test(ln) ? ln : null,
+      version: /^\d{1,2}\.\d{1,2}(\.\d{1,2})?$/.test(ver) ? ver : null,
+      symbols: symbols.join(',').slice(0, 300),
+    }).catch((err) => log.warn('Geräteinfo:', err.message));
 
     let raw;
     try {
@@ -223,6 +232,36 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
     const base = (cfg.displayUrl ? `https://${shortUrl}` : cfg.publicUrl).replace(/\/+$/, '');
     const target = `${base}/w/${device.pair_code}`;
     return json(res, 200, { code: device.pair_code, url: target, qr: qrRows(target) });
+  }
+
+  // ---- Statistik (nur Summen) – geschützt mit Schlüssel im Link ------------------
+  // STATS_KEY aus der Umgebung, sonst aus DATABASE_URL abgeleitet (steht nie im Code)
+  const statsKey = cfg.statsKey
+    || crypto.createHash('sha256').update(`${cfg.databaseUrl || ''}:fomoticker-stats`).digest('hex').slice(0, 24);
+  const keyOk = (url) => {
+    const k = String(url.searchParams.get('k') || '');
+    return k.length === statsKey.length && crypto.timingSafeEqual(Buffer.from(k), Buffer.from(statsKey));
+  };
+
+  async function collectStats() {
+    const [d, models, br, daily] = await Promise.all([deviceStats(pool), modelStats(pool), breakdownStats(pool), updateDaily(pool, 30)]);
+    const q = quotes.stats?.() || {};
+    return {
+      at: new Date().toISOString(),
+      devices: d,
+      models: models.map((r) => ({ k: modelName(r.part_number), n: r.n })),
+      languages: br.languages,
+      versions: br.versions,
+      symbols: br.symbols,
+      symbolsKnown: br.symbolsKnown,
+      daily,
+      backend: { source: quotes.source, watched: q.watched ?? null, cached: q.entries ?? null },
+    };
+  }
+
+  async function handleStats(req, res, url) {
+    if (!keyOk(url)) return json(res, 404, { error: 'nicht gefunden' });
+    return json(res, 200, await collectStats());
   }
 
   async function handleActivate(req, res) {
@@ -321,7 +360,7 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
     return send(res, 200, { results, ready: (directory?.size || 0) > 0 }, 'application/json; charset=utf-8');
   }
 
-  return async function handler(req, res) {
+  const handler = async function handler(req, res) {
     const url = new URL(req.url, 'http://localhost');
     const route = `${req.method} ${url.pathname}`;
     try {
@@ -350,6 +389,11 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
           return html(res, 200, watchlistCodePage(cfg, { code: (url.searchParams.get('code') || '').toUpperCase().slice(0, 6) }));
         case 'GET /api/search':
           return handleSearch(req, res, url);
+        case 'GET /api/stats':
+          return await handleStats(req, res, url);
+        case 'GET /stats':
+          if (!keyOk(url)) return json(res, 404, { error: 'nicht gefunden' });
+          return html(res, 200, statsPage({ appName: cfg.appName }));
         default: {
           const page = url.pathname.match(/^\/w\/([A-Za-z0-9]{6})$/);
           if (page && req.method === 'GET') {
@@ -370,4 +414,6 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
       if (!res.headersSent) json(res, err.status || 500, { error: 'interner Fehler' });
     }
   };
+  handler.statsKey = statsKey;
+  return handler;
 }

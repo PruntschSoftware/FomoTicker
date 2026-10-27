@@ -29,6 +29,19 @@ export async function migrate(pool) {
   // Uhrmodell (Garmin-Teilenummer) und Entwickler-Build (Simulator/VS Code) – nur für die Statistik
   await pool.query(`ALTER TABLE devices ADD COLUMN IF NOT EXISTS part_number TEXT`);
   await pool.query(`ALTER TABLE devices ADD COLUMN IF NOT EXISTS dev BOOLEAN`);
+  // Sprache, App-Version und zuletzt abgefragte Symbole – nur für Summen in der Statistik
+  await pool.query(`ALTER TABLE devices ADD COLUMN IF NOT EXISTS lang TEXT`);
+  await pool.query(`ALTER TABLE devices ADD COLUMN IF NOT EXISTS app_version TEXT`);
+  await pool.query(`ALTER TABLE devices ADD COLUMN IF NOT EXISTS symbols TEXT`);
+  // Verlauf pro Tag (UTC): aktive Uhren, wird laufend für den heutigen Tag aktualisiert
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS usage_daily (
+      day          DATE PRIMARY KEY,
+      active_real  INT NOT NULL,
+      active_all   INT NOT NULL,
+      total_real   INT NOT NULL,
+      new_real     INT NOT NULL
+    )`);
   // Kurs-/Chart-/Verzeichnis-Cache, übersteht Deploys
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quote_cache (
@@ -86,6 +99,9 @@ const DEVICE_COLS = `
   id,
   part_number,
   dev,
+  lang,
+  app_version,
+  symbols,
   pair_code,
   stripe_customer_id,
   subscription_status,
@@ -191,19 +207,31 @@ export async function saveSubscription(pool, { deviceId, customerId, subscriptio
   return rows.length;
 }
 
-/** Modell und Entwickler-Flag merken (nur schreiben, wenn sich etwas ändert). */
-export async function noteDeviceInfo(pool, device, { partNumber, dev }) {
-  if (!partNumber || (device.part_number === partNumber && Boolean(device.dev) === dev)) return;
-  await pool.query('UPDATE devices SET part_number = $2, dev = $3 WHERE id = $1::bigint', [device.id, partNumber, dev]);
+// "Echt" = alles außer Simulator/Entwickler-Builds und dem Test-Zugang
+const REAL = `dev IS NOT TRUE AND device_uid IS DISTINCT FROM 'claude-check-providers'`;
+
+/** Modell, Entwickler-Flag, Sprache, App-Version, Symbole merken (nur schreiben, wenn sich etwas ändert). */
+export async function noteDeviceInfo(pool, device, { partNumber = null, dev = false, lang = null, version = null, symbols = null }) {
+  const same = (a, b) => (a || null) === (b || null);
+  const pn = partNumber || device.part_number || null;
+  const ln = lang || device.lang || null;
+  const ver = version || device.app_version || null;
+  const sy = symbols || device.symbols || null;
+  const dv = partNumber ? dev : Boolean(device.dev);
+  if (same(device.part_number, pn) && Boolean(device.dev) === dv && same(device.lang, ln)
+      && same(device.app_version, ver) && same(device.symbols, sy)) return;
+  await pool.query(
+    'UPDATE devices SET part_number = $2, dev = $3, lang = $4, app_version = $5, symbols = $6 WHERE id = $1::bigint',
+    [device.id, pn, partNumber ? dev : device.dev, ln, ver, sy],
+  );
 }
 
-/** Uhren je Modell (nur echte, aktive der letzten 7 Tage) */
+/** Uhren je Modell (echte, aktive der letzten 7 Tage) */
 export async function modelStats(pool) {
   const { rows } = await pool.query(`
     SELECT part_number, count(*)::int AS n FROM devices
-     WHERE part_number IS NOT NULL AND dev IS NOT TRUE AND last_seen_at > now() - interval '7 days'
-       AND device_uid IS DISTINCT FROM 'claude-check-providers'
-     GROUP BY part_number ORDER BY n DESC, part_number LIMIT 15`);
+     WHERE part_number IS NOT NULL AND ${REAL} AND last_seen_at > now() - interval '7 days'
+     GROUP BY part_number ORDER BY n DESC, part_number LIMIT 25`);
   return rows;
 }
 
@@ -211,17 +239,48 @@ export async function modelStats(pool) {
 export async function deviceStats(pool) {
   const { rows } = await pool.query(`
     SELECT count(*)::int AS total,
-           count(*) FILTER (WHERE last_seen_at > now() - interval '1 day')::int AS active_1d,
-           count(*) FILTER (WHERE last_seen_at > now() - interval '7 days')::int AS active_7d,
-           count(*) FILTER (WHERE last_seen_at IS NULL)::int AS never_loaded,
-           count(*) FILTER (WHERE jsonb_typeof(watchlist) = 'array' AND jsonb_array_length(watchlist) > 0)::int AS with_watchlist,
-           count(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS new_7d,
-           count(*) FILTER (WHERE device_uid = 'claude-check-providers')::int AS test,
+           count(*) FILTER (WHERE ${REAL})::int AS real,
            count(*) FILTER (WHERE dev IS TRUE)::int AS dev,
-           count(*) FILTER (WHERE part_number IS NULL)::int AS unknown,
-           count(*) FILTER (WHERE dev IS NOT TRUE AND part_number IS NOT NULL
-                              AND device_uid IS DISTINCT FROM 'claude-check-providers')::int AS real
+           count(*) FILTER (WHERE device_uid = 'claude-check-providers')::int AS test,
+           count(*) FILTER (WHERE ${REAL} AND last_seen_at > now() - interval '1 day')::int AS active_1d,
+           count(*) FILTER (WHERE ${REAL} AND last_seen_at > now() - interval '7 days')::int AS active_7d,
+           count(*) FILTER (WHERE ${REAL} AND last_seen_at > now() - interval '30 days')::int AS active_30d,
+           count(*) FILTER (WHERE ${REAL} AND last_seen_at > now() - interval '1 hour')::int AS active_1h,
+           count(*) FILTER (WHERE ${REAL} AND last_seen_at IS NULL)::int AS never_loaded,
+           count(*) FILTER (WHERE ${REAL} AND jsonb_typeof(watchlist) = 'array' AND jsonb_array_length(watchlist) > 0)::int AS with_watchlist,
+           count(*) FILTER (WHERE ${REAL} AND created_at > now() - interval '1 day')::int AS new_1d,
+           count(*) FILTER (WHERE ${REAL} AND created_at > now() - interval '7 days')::int AS new_7d,
+           count(*) FILTER (WHERE ${REAL} AND part_number IS NULL)::int AS unknown
       FROM devices`);
   return rows[0];
 }
 
+/** Verteilungen unter echten Uhren (aktiv 30 Tage): Sprache, App-Version, beliebteste Symbole */
+export async function breakdownStats(pool) {
+  const act = `${REAL} AND last_seen_at > now() - interval '30 days'`;
+  const [langs, versions, syms, web] = await Promise.all([
+    pool.query(`SELECT COALESCE(lang, '?') AS k, count(*)::int AS n FROM devices WHERE ${act} GROUP BY 1 ORDER BY n DESC LIMIT 20`),
+    pool.query(`SELECT COALESCE(app_version, '< 1.7') AS k, count(*)::int AS n FROM devices WHERE ${act} GROUP BY 1 ORDER BY n DESC LIMIT 20`),
+    pool.query(`SELECT s AS k, count(*)::int AS n FROM devices, unnest(string_to_array(symbols, ',')) AS s
+                 WHERE ${act} AND symbols IS NOT NULL AND s <> '' GROUP BY s ORDER BY n DESC, s LIMIT 20`),
+    pool.query(`SELECT count(*)::int AS n FROM devices WHERE ${act} AND symbols IS NOT NULL`),
+  ]);
+  return { languages: langs.rows, versions: versions.rows, symbols: syms.rows, symbolsKnown: web.rows[0].n };
+}
+
+/** Heutigen Tag im Verlauf fortschreiben und die letzten Tage liefern */
+export async function updateDaily(pool, days = 30) {
+  await pool.query(`
+    INSERT INTO usage_daily (day, active_real, active_all, total_real, new_real)
+    SELECT (now() AT TIME ZONE 'UTC')::date,
+           count(*) FILTER (WHERE ${REAL} AND (last_seen_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date),
+           count(*) FILTER (WHERE (last_seen_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date),
+           count(*) FILTER (WHERE ${REAL}),
+           count(*) FILTER (WHERE ${REAL} AND (created_at AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date)
+      FROM devices
+    ON CONFLICT (day) DO UPDATE SET active_real = EXCLUDED.active_real, active_all = EXCLUDED.active_all,
+      total_real = EXCLUDED.total_real, new_real = EXCLUDED.new_real`);
+  const { rows } = await pool.query(
+    `SELECT to_char(day, 'YYYY-MM-DD') AS day, active_real, total_real, new_real FROM usage_daily ORDER BY day DESC LIMIT $1`, [days]);
+  return rows.reverse();
+}

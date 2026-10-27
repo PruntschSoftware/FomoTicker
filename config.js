@@ -26,6 +26,8 @@ export const config = {
   priceLabel: env.PRICE_LABEL || '1 € / Monat',
   trialDays: num(env.TRIAL_DAYS, 7),
   maxSymbols: num(env.MAX_SYMBOLS, 10),
+  // Schlüssel fürs Statistik-Dashboard (/stats?k=…); leer = aus DATABASE_URL abgeleitet
+  statsKey: env.STATS_KEY || '',
 
   quoteProvider: env.QUOTE_PROVIDER || 'twelvedata',
   quoteCacheSeconds: num(env.QUOTE_CACHE_SECONDS, 60),
