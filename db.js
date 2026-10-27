@@ -185,3 +185,18 @@ export async function saveSubscription(pool, { deviceId, customerId, subscriptio
   );
   return rows.length;
 }
+
+/** Nur Summen, keine Einzeldaten: wie viele Uhren registriert/aktiv sind. */
+export async function deviceStats(pool) {
+  const { rows } = await pool.query(`
+    SELECT count(*)::int AS total,
+           count(*) FILTER (WHERE last_seen_at > now() - interval '1 day')::int AS active_1d,
+           count(*) FILTER (WHERE last_seen_at > now() - interval '7 days')::int AS active_7d,
+           count(*) FILTER (WHERE last_seen_at IS NULL)::int AS never_loaded,
+           count(*) FILTER (WHERE jsonb_typeof(watchlist) = 'array' AND jsonb_array_length(watchlist) > 0)::int AS with_watchlist,
+           count(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS new_7d,
+           count(*) FILTER (WHERE device_uid = 'claude-check-providers')::int AS test
+      FROM devices`);
+  return rows[0];
+}
+

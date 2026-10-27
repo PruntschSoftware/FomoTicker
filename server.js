@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { createApp } from './app.js';
 import { checkConfig, config } from './config.js';
-import { createCacheStore, createPool, migrate, startPaywallOnce } from './db.js';
+import { createCacheStore, createPool, deviceStats, migrate, startPaywallOnce } from './db.js';
 import { createProviders } from './providers.js';
 import { createQuoteCache } from './quotes.js';
 import { createDirectory, US_MICS } from './directory.js';
@@ -54,6 +54,19 @@ const describe = (p) => {
   const b = p.budget?.stats();
   return b ? `${p.name} ${b.day}/${b.perDay || '∞'} heute` : p.name;
 };
+// Nutzung (nur Summen) ins Log: beim Start und alle 30 Minuten
+async function logUsage() {
+  try {
+    const d = await deviceStats(pool);
+    console.log(`Uhren: ${d.total} registriert (davon ${d.test} Test), aktiv 24 h: ${d.active_1d}, aktiv 7 Tage: ${d.active_7d}, `
+      + `nie Kurse geladen: ${d.never_loaded}, mit Web-Watchlist: ${d.with_watchlist}, neu in 7 Tagen: ${d.new_7d}`);
+  } catch (err) {
+    console.warn('Nutzungsstatistik:', err.message);
+  }
+}
+logUsage();
+setInterval(logUsage, 30 * 60 * 1000).unref();
+
 setInterval(() => {
   const used = new Set([qp, sp, dp].filter(Boolean));
   console.log(`Credits: ${[...used].map(describe).join(' · ')}, Symbole ${quotes.stats().watched}`);
