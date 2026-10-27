@@ -73,7 +73,7 @@ dt { color: var(--muted); } dd { margin: 0; font-family: var(--mono); text-align
   <div class="grid">
     <section><h2>Uhrmodelle (aktiv 7 Tage)</h2><div class="bars" id="models"></div></section>
     <section><h2>Sprache (aktiv 30 Tage)</h2><div class="bars" id="langs"></div></section>
-    <section><h2>Beliebteste Aktien (aktiv 30 Tage)</h2><div class="bars" id="syms"></div><p class="note" id="symNote"></p></section>
+    <section><h2>Beliebteste Aktien</h2><div class="bars" id="syms"></div><p class="note" id="symNote"></p></section>
     <section><h2>App-Version (aktiv 30 Tage)</h2><div class="bars" id="vers"></div></section>
     <section><h2>Zusammensetzung</h2><dl id="mix"></dl></section>
   </div>
@@ -145,7 +145,7 @@ async function load() {
     bars(document.getElementById('langs'), s.languages, (k) => LANG[k] || k);
     bars(document.getElementById('syms'), s.symbols);
     bars(document.getElementById('vers'), s.versions);
-    document.getElementById('symNote').textContent = s.symbolsKnown ? 'Aus den Listen von ' + s.symbolsKnown + ' Uhren.' : '';
+    document.getElementById('symNote').textContent = 'Gezählt seit 27.10., 15:35 – bisher ' + s.symbolsKnown + ' von ' + d.active_30d + ' aktiven Uhren. Jede Uhr kommt dazu, sobald sie die App öffnet.';
     document.getElementById('mix').innerHTML = [
       ['Registriert gesamt', d.total], ['davon echt', d.real], ['Simulator / Entwickler', d.dev], ['Test-Zugang', d.test],
       ['Ohne Modell (App < 1.5)', d.unknown], ['Nie Kurse geladen', d.never_loaded],
