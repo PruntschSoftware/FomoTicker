@@ -190,8 +190,10 @@ export function buildQuote(snap, bars, now = Date.now()) {
       }
     }
     if (extPrice > 0) extSession = 'pre';
-  } else if (session !== 'regular' && ltP > 0 && ltT) {
-    // Nachbörse: Trade nach 16:00 am letzten Handelstag (bzw. danach, aber nicht heute vor 9:30)
+  }
+  // Nachbörse: Trade nach 16:00 am letzten Handelstag (bzw. danach, aber nicht heute vor 9:30).
+  // Auch in der Vorbörse, solange dort noch nichts gehandelt wurde – wie bei anderen Apps
+  if (!extSession && session !== 'regular' && ltP > 0 && ltT) {
     const after = (tDay === lastDay && tMin >= REG_CLOSE) || (tDay > lastDay && !(tDay === today && tMin < REG_OPEN));
     if (after) {
       extPrice = ltP;
