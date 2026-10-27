@@ -1,7 +1,8 @@
 import http from 'node:http';
 import { createApp } from './app.js';
 import { checkConfig, config } from './config.js';
-import { createCacheStore, createPool, deviceStats, migrate, startPaywallOnce } from './db.js';
+import { createCacheStore, createPool, deviceStats, migrate, modelStats, startPaywallOnce } from './db.js';
+import { modelName } from './models.js';
 import { createProviders } from './providers.js';
 import { createQuoteCache } from './quotes.js';
 import { createDirectory, US_MICS } from './directory.js';
@@ -58,8 +59,11 @@ const describe = (p) => {
 async function logUsage() {
   try {
     const d = await deviceStats(pool);
-    console.log(`Uhren: ${d.total} registriert (davon ${d.test} Test), aktiv 24 h: ${d.active_1d}, aktiv 7 Tage: ${d.active_7d}, `
+    console.log(`Uhren: ${d.total} registriert, davon echt ${d.real}, Entwickler/Simulator ${d.dev}, Test ${d.test}, `
+      + `ohne Modell (App < 1.5) ${d.unknown} | aktiv 24 h: ${d.active_1d}, aktiv 7 Tage: ${d.active_7d}, `
       + `nie Kurse geladen: ${d.never_loaded}, mit Web-Watchlist: ${d.with_watchlist}, neu in 7 Tagen: ${d.new_7d}`);
+    const models = await modelStats(pool);
+    if (models.length) console.log(`Modelle (echt, aktiv 7 Tage): ${models.map((r) => `${modelName(r.part_number)} ${r.n}`).join(', ')}`);
   } catch (err) {
     console.warn('Nutzungsstatistik:', err.message);
   }

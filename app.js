@@ -1,4 +1,4 @@
-import { findDeviceByCode, findDeviceByToken, getWatchlist, registerDevice, saveSubscription, saveWatchlist } from './db.js';
+import { findDeviceByCode, findDeviceByToken, getWatchlist, noteDeviceInfo, registerDevice, saveSubscription, saveWatchlist } from './db.js';
 import { activatePage, alreadyActivePage, errorPage, freePage, successPage, watchlistCodePage, watchlistPage } from './pages.js';
 import { parseSymbols } from './quotes.js';
 import { verifyWebhook } from './stripe.js';
@@ -145,6 +145,13 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
     if (!token) return json(res, 401, { error: 'Token fehlt' });
     const device = await findDeviceByToken(pool, token);
     if (!device) return json(res, 401, { error: 'Token unbekannt' });
+
+    // Uhrmodell + Entwickler-Build (ab App 1.5) für die Statistik
+    const pn = String(url.searchParams.get('m') || '');
+    if (/^\d{3}-[A-Z0-9]{5}-\d{2}$/.test(pn)) {
+      noteDeviceInfo(pool, device, { partNumber: pn, dev: url.searchParams.get('d') === '1' })
+        .catch((err) => log.warn('Geräteinfo:', err.message));
+    }
 
     // Bewusst Status 200: manche Uhren liefern bei 4xx keinen Body an die App
     const a = access(device);

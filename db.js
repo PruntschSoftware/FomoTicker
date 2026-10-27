@@ -26,6 +26,9 @@ export async function migrate(pool) {
   `);
   // Watchlist von der Webseite: [{ k: "SAP@XETR", s: "SAP", n: "SAP SE", x: "XETRA" }, ...]
   await pool.query(`ALTER TABLE devices ADD COLUMN IF NOT EXISTS watchlist JSONB`);
+  // Uhrmodell (Garmin-Teilenummer) und Entwickler-Build (Simulator/VS Code) – nur für die Statistik
+  await pool.query(`ALTER TABLE devices ADD COLUMN IF NOT EXISTS part_number TEXT`);
+  await pool.query(`ALTER TABLE devices ADD COLUMN IF NOT EXISTS dev BOOLEAN`);
   // Kurs-/Chart-/Verzeichnis-Cache, übersteht Deploys
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quote_cache (
@@ -81,6 +84,8 @@ const PAID = `COALESCE(subscription_status, '') IN ('active', 'trialing', 'past_
 // Alles, was die API über ein Gerät wissen muss – Zeitlogik bleibt in der DB
 const DEVICE_COLS = `
   id,
+  part_number,
+  dev,
   pair_code,
   stripe_customer_id,
   subscription_status,
@@ -186,6 +191,22 @@ export async function saveSubscription(pool, { deviceId, customerId, subscriptio
   return rows.length;
 }
 
+/** Modell und Entwickler-Flag merken (nur schreiben, wenn sich etwas ändert). */
+export async function noteDeviceInfo(pool, device, { partNumber, dev }) {
+  if (!partNumber || (device.part_number === partNumber && Boolean(device.dev) === dev)) return;
+  await pool.query('UPDATE devices SET part_number = $2, dev = $3 WHERE id = $1::bigint', [device.id, partNumber, dev]);
+}
+
+/** Uhren je Modell (nur echte, aktive der letzten 7 Tage) */
+export async function modelStats(pool) {
+  const { rows } = await pool.query(`
+    SELECT part_number, count(*)::int AS n FROM devices
+     WHERE part_number IS NOT NULL AND dev IS NOT TRUE AND last_seen_at > now() - interval '7 days'
+       AND device_uid IS DISTINCT FROM 'claude-check-providers'
+     GROUP BY part_number ORDER BY n DESC, part_number LIMIT 15`);
+  return rows;
+}
+
 /** Nur Summen, keine Einzeldaten: wie viele Uhren registriert/aktiv sind. */
 export async function deviceStats(pool) {
   const { rows } = await pool.query(`
@@ -195,7 +216,11 @@ export async function deviceStats(pool) {
            count(*) FILTER (WHERE last_seen_at IS NULL)::int AS never_loaded,
            count(*) FILTER (WHERE jsonb_typeof(watchlist) = 'array' AND jsonb_array_length(watchlist) > 0)::int AS with_watchlist,
            count(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS new_7d,
-           count(*) FILTER (WHERE device_uid = 'claude-check-providers')::int AS test
+           count(*) FILTER (WHERE device_uid = 'claude-check-providers')::int AS test,
+           count(*) FILTER (WHERE dev IS TRUE)::int AS dev,
+           count(*) FILTER (WHERE part_number IS NULL)::int AS unknown,
+           count(*) FILTER (WHERE dev IS NOT TRUE AND part_number IS NOT NULL
+                              AND device_uid IS DISTINCT FROM 'claude-check-providers')::int AS real
       FROM devices`);
   return rows[0];
 }
