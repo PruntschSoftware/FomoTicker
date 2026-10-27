@@ -62,6 +62,21 @@ export function normalizeSeries(values, prevClose) {
   return { sp: values.map(scale), pc: prevClose > 0 ? scale(prevClose) : -1 };
 }
 
+// Punkte fürs Mini-Chart: höchstens max (ältere Uhren zeichnen max. 64 Polygonpunkte),
+// am Ende der aktuelle Kurs, damit das Chart genau beim angezeigten Preis endet
+export const CHART_MAX = 55;
+export function chartPoints(values, price, max = CHART_MAX) {
+  let v = values.filter((x) => Number.isFinite(x) && x > 0);
+  const room = price > 0 ? max - 1 : max;
+  if (v.length > room) {
+    const out = [];
+    for (let i = 0; i < room; i++) out.push(v[Math.round((i * (v.length - 1)) / (room - 1))]);
+    v = out;
+  }
+  if (price > 0 && v[v.length - 1] !== price) v.push(price);
+  return v;
+}
+
 const CODE_RE = /^[A-Z0-9]{6}$/;
 
 function cleanWatchlist(items, max) {
@@ -172,7 +187,7 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
       const name = (fromWeb && wl.find((w) => w.k === k)?.n) || r[7] || directory?.lookup(k)?.name || '';
       if (name) n[k] = name;
       if (Array.isArray(ser[k]) && ser[k].length >= 2) {
-        const norm = normalizeSeries(ser[k], r[6]);
+        const norm = normalizeSeries(chartPoints(ser[k], r[0]), r[6]);
         sp[k] = norm.sp;
         pc[k] = norm.pc;
       }

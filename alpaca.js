@@ -1,7 +1,7 @@
 // Alpaca Market Data (https://alpaca.markets) – Basic-Plan gratis, Feed "iex"
 //
 //  Kurse:   GET {data}/v2/stocks/snapshots?symbols=AAPL,MSFT&feed=iex   (1 Anfrage für alle)
-//  Chart:   GET {data}/v2/stocks/bars?symbols=…&timeframe=15Min&start=…&feed=iex
+//  Chart:   GET {data}/v2/stocks/bars?symbols=…&timeframe=5Min&start=…&feed=iex  (Schlusskurse: 15Min)
 //  Suche:   GET {trading}/v2/assets?status=active&asset_class=us_equity
 //  Auth:    Header APCA-API-KEY-ID / APCA-API-SECRET-KEY
 //
@@ -229,13 +229,14 @@ export function createAlpaca({ keyId, secretKey, dataUrl, tradingUrl, feed = 'ie
   const usOnly = (keys) => keys.filter((k) => !String(k).includes('@'));
 
   // 15-Min-Bars der letzten Tage (6 Tage reichen über Wochenende + Feiertag)
-  async function fetchBars(syms, prio) {
-    const start = new Date(Date.now() - 6 * 86400 * 1000).toISOString();
+  // timeframe 15Min für die Schlusskurse, 5Min für den feineren Tageschart
+  async function fetchBars(syms, prio, timeframe = '15Min', days = 6) {
+    const start = new Date(Date.now() - days * 86400 * 1000).toISOString();
     const all = {};
     let pageToken;
     for (let page = 0; page < 8; page++) {
       const body = await get(dataUrl, '/v2/stocks/bars', {
-        symbols: syms.join(','), timeframe: '15Min', start, feed, limit: 10000, adjustment: 'raw', page_token: pageToken,
+        symbols: syms.join(','), timeframe, start, feed, limit: 10000, adjustment: 'raw', page_token: pageToken,
       }, { prio });
       for (const [s, list] of Object.entries(body?.bars || {})) {
         (all[s] ||= []).push(...list);
@@ -282,7 +283,7 @@ export function createAlpaca({ keyId, secretKey, dataUrl, tradingUrl, feed = 'ie
     async fetchSeries(keys) {
       const syms = usOnly(keys);
       if (syms.length === 0) return {};
-      const all = await fetchBars(syms, 'series');
+      const all = await fetchBars(syms, 'series', '5Min', 4);
       const out = {};
       for (const s of syms) {
         const v = barsToSeries(all[s]);
