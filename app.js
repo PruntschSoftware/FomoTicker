@@ -1,6 +1,7 @@
 import { findDeviceByCode, findDeviceByToken, getWatchlist, noteDeviceInfo, registerDevice, saveSubscription, saveWatchlist } from './db.js';
 import { activatePage, alreadyActivePage, errorPage, freePage, successPage, watchlistCodePage, watchlistPage } from './pages.js';
 import { parseSymbols } from './quotes.js';
+import { qrRows } from './qr.js';
 import { verifyWebhook } from './stripe.js';
 
 const MAX_BODY = 64 * 1024;
@@ -213,6 +214,17 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
     return json(res, 200, body);
   }
 
+  // QR-Code für die Uhr: Watchlist-Seite inkl. Code, als Zeilen aus "0"/"1"
+  async function handleQr(req, res) {
+    const token = bearer(req);
+    if (!token) return json(res, 401, { error: 'Token fehlt' });
+    const device = await findDeviceByToken(pool, token);
+    if (!device) return json(res, 401, { error: 'Token unbekannt' });
+    const base = (cfg.displayUrl ? `https://${shortUrl}` : cfg.publicUrl).replace(/\/+$/, '');
+    const target = `${base}/w/${device.pair_code}`;
+    return json(res, 200, { code: device.pair_code, url: target, qr: qrRows(target) });
+  }
+
   async function handleActivate(req, res) {
     if (!activateLimit(clientIp(req))) {
       return html(res, 429, errorPage(cfg, 'Zu viele Versuche. Bitte später erneut.'));
@@ -321,6 +333,8 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
           return await handleRegister(req, res);
         case 'GET /v1/quotes':
           return await handleQuotes(req, res, url);
+        case 'GET /v1/qr':
+          return await handleQr(req, res);
         case 'GET /':
           if (!paywall) return html(res, 200, freePage(cfg));
           return html(res, 200, activatePage(cfg, { code: (url.searchParams.get('code') || '').slice(0, 6) }));
