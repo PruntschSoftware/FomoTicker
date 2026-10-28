@@ -284,3 +284,18 @@ export async function updateDaily(pool, days = 30) {
     `SELECT to_char(day, 'YYYY-MM-DD') AS day, active_real, total_real, new_real FROM usage_daily ORDER BY day DESC LIMIT $1`, [days]);
   return rows.reverse();
 }
+
+/** Neue echte Uhren pro Kalendertag (Wiener Zeit), lückenlos vom ersten Gerät bis heute (max. 365 Tage) */
+export async function installsPerDay(pool) {
+  const today = `(now() AT TIME ZONE 'Europe/Vienna')::date`;
+  const realDays = `SELECT (created_at AT TIME ZONE 'Europe/Vienna')::date AS d FROM devices WHERE ${REAL}`;
+  const { rows } = await pool.query(`
+    SELECT to_char(days.d, 'YYYY-MM-DD') AS day, count(r.d)::int AS n
+      FROM generate_series(
+             (SELECT GREATEST(COALESCE(min(x.d), ${today}), ${today} - 364) FROM (${realDays}) x),
+             ${today}, interval '1 day') AS days(d)
+      LEFT JOIN (${realDays}) r ON r.d = days.d::date
+     GROUP BY days.d ORDER BY days.d`);
+  return rows;
+}
+

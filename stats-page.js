@@ -51,6 +51,23 @@ h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; text-transform: upperc
 .bar .n { font: 13px var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
 .note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
 .empty { color: var(--muted); font-size: 14px; }
+.head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 12px; margin-bottom: 12px; }
+.head h2 { margin: 0; }
+.pills { display: flex; gap: 4px; flex-wrap: wrap; }
+.pills button { font: 12px var(--mono); color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.pills button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); background: var(--up-soft); }
+.pills button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bars-svg rect.b { fill: var(--accent); opacity: .55; cursor: pointer; }
+.bars-svg rect.b.a { opacity: 1; }
+.bars-svg rect.b.bb { fill: var(--muted); opacity: 1; }
+.bars-svg text { fill: var(--muted); font: 11px var(--mono); }
+.cmp { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
+.cmp .box { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; min-width: 0; }
+.cmp label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.cmp select { font: 13px var(--mono); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; max-width: 100%; }
+.cmp .big { font: 500 26px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.cmp .sub { font: 12px var(--mono); color: var(--muted); }
+.delta.up { color: var(--up); } .delta.down { color: var(--down); }
 dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 14px; }
 dt { color: var(--muted); } dd { margin: 0; font-family: var(--mono); text-align: right; }
 </style>
@@ -63,6 +80,26 @@ dt { color: var(--muted); } dd { margin: 0; font-family: var(--mono); text-align
   </header>
 
   <div class="kpis" id="kpis"></div>
+
+  <section>
+    <div class="head">
+      <h2>Neue Uhren pro Tag</h2>
+      <div class="pills" id="range" role="group" aria-label="Zeitraum">
+        <button type="button" data-d="14">14 Tage</button>
+        <button type="button" data-d="30" aria-pressed="true">30 Tage</button>
+        <button type="button" data-d="90">90 Tage</button>
+        <button type="button" data-d="0">Alle</button>
+      </div>
+    </div>
+    <svg class="chart bars-svg" id="inst" viewBox="0 0 800 220" role="img" aria-label="Neue Uhren pro Tag"></svg>
+    <div class="cmp">
+      <div class="box"><label for="dayA">Tag A</label><select id="dayA"></select><span class="big" id="valA">–</span><span class="sub" id="subA"></span></div>
+      <div class="box"><label for="dayB">Tag B</label><select id="dayB"></select><span class="big" id="valB">–</span><span class="sub" id="subB"></span></div>
+      <div class="box"><label>Ø im Zeitraum</label><span class="big" id="avg">–</span><span class="sub" id="avgSub"></span></div>
+      <div class="box"><label>Bester Tag</label><span class="big" id="best">–</span><span class="sub" id="bestSub"></span></div>
+    </div>
+    <p class="note">Gezählt werden neu angemeldete echte Uhren nach Wiener Kalendertag. Tippe auf einen Balken, um ihn als Tag A zu wählen. Neuinstallationen auf derselben Uhr zählen nicht doppelt, deshalb liegt Garmins Download-Zahl etwas höher.</p>
+  </section>
 
   <section>
     <h2>Aktive echte Uhren pro Tag (UTC)</h2>
@@ -94,6 +131,79 @@ function bars(el, rows, label = (k) => k) {
     + Math.round((r.n / total) * 100) + ' %</span></div><div class="n">' + r.n + '</div>'
     + '<div class="track"><div class="fill" style="width:' + (r.n / max) * 100 + '%"></div></div></div>').join('');
 }
+
+let inst = [], range = 30, dayA = null, dayB = null;
+const WD = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+const fmtDay = (d) => { const t = new Date(d + 'T12:00:00Z'); return WD[t.getUTCDay()] + ' ' + d.slice(8) + '.' + d.slice(5, 7) + '.'; };
+const shift = (d, n) => { const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+const valOf = (d) => { const r = inst.find((x) => x.day === d); return r ? r.n : null; };
+
+function delta(a, b) {
+  if (a == null || b == null) return '';
+  const diff = a - b;
+  const pct = b > 0 ? Math.round((diff / b) * 100) : null;
+  const cls = diff > 0 ? 'up' : diff < 0 ? 'down' : '';
+  return '<span class="delta ' + cls + '">' + (diff > 0 ? '+' : '') + diff + (pct != null ? ' (' + (pct > 0 ? '+' : '') + pct + ' %)' : '') + '</span>';
+}
+
+function visible() { return range > 0 ? inst.slice(-range) : inst; }
+
+function renderInstalls() {
+  const rows = visible();
+  const svg = document.getElementById('inst');
+  const W = Math.max(280, Math.round(svg.clientWidth || 800)), H = 220, L = 30, R = 8, T = 12, B = 26;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  if (!rows.length) { svg.innerHTML = ''; return; }
+  const max = Math.max(1, ...rows.map((r) => r.n));
+  const step = Math.max(1, Math.ceil(max / 4)); const top = step * 4;
+  const bw = (W - L - R) / rows.length; const gap = Math.min(4, bw * 0.25);
+  const y = (v) => T + (H - T - B) * (1 - v / top);
+  let g = '';
+  for (let v = 0; v <= top; v += step) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="var(--line)"/>'
+    + '<text x="' + (L - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + v + '</text>';
+  const every = Math.max(1, Math.ceil(rows.length / Math.max(3, Math.floor(W / 70))));
+  rows.forEach((r, i) => {
+    const x = L + i * bw + gap / 2; const h = Math.max(r.n > 0 ? 2 : 0, y(0) - y(r.n));
+    const cls = 'b' + (r.day === dayA ? ' a' : '') + (r.day === dayB ? ' bb' : '');
+    g += '<rect class="' + cls + '" data-day="' + r.day + '" x="' + x + '" y="' + (y(0) - h) + '" width="' + Math.max(1, bw - gap) + '" height="' + h + '"><title>' + fmtDay(r.day) + ': ' + r.n + ' neu</title></rect>';
+    const lastI = rows.length - 1;
+    if ((i % every === 0 && lastI - i >= Math.ceil(every * 0.7)) || i === lastI) g += '<text x="' + (x + (bw - gap) / 2) + '" y="' + (H - 6) + '" text-anchor="middle">' + r.day.slice(8) + '.' + r.day.slice(5, 7) + '</text>';
+  });
+  svg.innerHTML = g;
+
+  // Auswahl-Listen (neueste zuerst)
+  const opts = inst.slice().reverse().map((r) => '<option value="' + r.day + '">' + fmtDay(r.day) + ' · ' + r.n + '</option>').join('');
+  const sa = document.getElementById('dayA'), sb = document.getElementById('dayB');
+  if (sa.dataset.len !== String(inst.length)) { sa.innerHTML = opts; sb.innerHTML = opts; sa.dataset.len = String(inst.length); }
+  sa.value = dayA; sb.value = dayB;
+  const a = valOf(dayA), b = valOf(dayB);
+  document.getElementById('valA').textContent = a ?? '–';
+  document.getElementById('subA').innerHTML = 'Vortag ' + (valOf(shift(dayA, -1)) ?? '–') + ' · Vorwoche ' + (valOf(shift(dayA, -7)) ?? '–');
+  document.getElementById('valB').innerHTML = (b ?? '–');
+  document.getElementById('subB').innerHTML = 'A gegenüber B: ' + (delta(a, b) || '–');
+  const sum = rows.reduce((t, r) => t + r.n, 0);
+  document.getElementById('avg').textContent = (sum / rows.length).toFixed(1).replace('.', ',');
+  document.getElementById('avgSub').textContent = sum + ' neu in ' + rows.length + ' Tagen';
+  const best = rows.reduce((m, r) => (r.n > m.n ? r : m), rows[0]);
+  document.getElementById('best').textContent = best.n;
+  document.getElementById('bestSub').textContent = fmtDay(best.day);
+}
+
+document.getElementById('range').addEventListener('click', (e) => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  range = Number(btn.dataset.d);
+  document.querySelectorAll('#range button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+  try { localStorage.setItem('range', String(range)); } catch (err) { /* egal */ }
+  renderInstalls();
+});
+document.getElementById('inst').addEventListener('click', (e) => {
+  const r = e.target.closest('rect[data-day]'); if (!r) return;
+  dayA = r.dataset.day; renderInstalls();
+});
+document.getElementById('dayA').addEventListener('change', (e) => { dayA = e.target.value; renderInstalls(); });
+document.getElementById('dayB').addEventListener('change', (e) => { dayB = e.target.value; renderInstalls(); });
+try { const r = Number(localStorage.getItem('range')); if ([0, 14, 30, 90].includes(r) && localStorage.getItem('range') !== null) {
+  range = r; document.querySelectorAll('#range button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.d) === r))); } } catch (err) { /* egal */ }
 
 function chart(rows) {
   const svg = document.getElementById('chart');
@@ -141,6 +251,13 @@ async function load() {
     ].map(([l, v, sub]) => '<div class="kpi"><span class="l">' + l + '</span><span class="v">' + v + '</span><span class="s">' + esc(sub) + '</span></div>').join('');
     last = s.daily || [];
     chart(last);
+    inst = s.installs || [];
+    if (inst.length) {
+      const today = inst[inst.length - 1].day;
+      if (!dayA || !valOf(dayA) && valOf(dayA) !== 0) dayA = today;
+      if (!dayB || !valOf(dayB) && valOf(dayB) !== 0) dayB = inst.length > 1 ? inst[inst.length - 2].day : today;
+    }
+    renderInstalls();
     bars(document.getElementById('models'), s.models);
     bars(document.getElementById('langs'), s.languages, (k) => LANG[k] || k);
     bars(document.getElementById('syms'), s.symbols);
@@ -161,7 +278,7 @@ async function load() {
 let last = null;
 load();
 setInterval(load, 60000);
-window.addEventListener('resize', () => { if (last) chart(last); });
+window.addEventListener('resize', () => { if (last) chart(last); renderInstalls(); });
 </script>
 </body>
 </html>`;

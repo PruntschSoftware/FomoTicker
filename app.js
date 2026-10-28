@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { breakdownStats, deviceStats, findDeviceByCode, findDeviceByToken, getWatchlist, modelStats, noteDeviceInfo, registerDevice, saveSubscription, saveWatchlist, updateDaily } from './db.js';
+import { breakdownStats, deviceStats, installsPerDay, findDeviceByCode, findDeviceByToken, getWatchlist, modelStats, noteDeviceInfo, registerDevice, saveSubscription, saveWatchlist, updateDaily } from './db.js';
 import { modelName } from './models.js';
 import { statsPage } from './stats-page.js';
 import { activatePage, alreadyActivePage, errorPage, freePage, successPage, watchlistCodePage, watchlistPage } from './pages.js';
@@ -244,7 +244,7 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
   };
 
   async function collectStats() {
-    const [d, models, br, daily] = await Promise.all([deviceStats(pool), modelStats(pool), breakdownStats(pool), updateDaily(pool, 30)]);
+    const [d, models, br, daily, installs] = await Promise.all([deviceStats(pool), modelStats(pool), breakdownStats(pool), updateDaily(pool, 30), installsPerDay(pool)]);
     const q = quotes.stats?.() || {};
     return {
       at: new Date().toISOString(),
@@ -255,6 +255,7 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
       symbols: br.symbols,
       symbolsKnown: br.symbolsKnown,
       daily,
+      installs,
       backend: { source: quotes.source, watched: q.watched ?? null, cached: q.entries ?? null },
     };
   }
