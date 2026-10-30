@@ -207,6 +207,9 @@ export async function saveSubscription(pool, { deviceId, customerId, subscriptio
   return rows.length;
 }
 
+// Standardliste der App (properties.xml) – wer sie noch hat, hat nie eigene Aktien gewählt
+export const DEFAULT_SYMBOLS = 'AAPL,MSFT,NVDA,AMZN,TSLA';
+
 // "Echt" = alles außer Simulator/Entwickler-Builds und dem Test-Zugang
 const REAL = `dev IS NOT TRUE AND device_uid IS DISTINCT FROM 'claude-check-providers'`;
 
@@ -258,14 +261,23 @@ export async function deviceStats(pool) {
 /** Verteilungen unter echten Uhren (aktiv 30 Tage): Sprache, App-Version, beliebteste Symbole */
 export async function breakdownStats(pool) {
   const act = `${REAL} AND last_seen_at > now() - interval '30 days'`;
-  const [langs, versions, syms, web] = await Promise.all([
+  const web = `jsonb_typeof(watchlist) = 'array' AND jsonb_array_length(watchlist) > 0`;
+  const own = `symbols IS NOT NULL AND (${web} OR symbols <> '${DEFAULT_SYMBOLS}')`;
+  const [langs, versions, syms, known, lists] = await Promise.all([
     pool.query(`SELECT COALESCE(lang, '?') AS k, count(*)::int AS n FROM devices WHERE ${act} GROUP BY 1 ORDER BY n DESC LIMIT 20`),
     pool.query(`SELECT COALESCE(app_version, '< 1.7') AS k, count(*)::int AS n FROM devices WHERE ${act} GROUP BY 1 ORDER BY n DESC LIMIT 20`),
+    // beliebteste Aktien nur aus selbst gewählten Listen (die Standardliste würde alles überdecken)
     pool.query(`SELECT s AS k, count(*)::int AS n FROM devices, unnest(string_to_array(symbols, ',')) AS s
-                 WHERE ${act} AND symbols IS NOT NULL AND s <> '' GROUP BY s ORDER BY n DESC, s LIMIT 20`),
+                 WHERE ${act} AND ${own} AND s <> '' GROUP BY s ORDER BY n DESC, s LIMIT 20`),
     pool.query(`SELECT count(*)::int AS n FROM devices WHERE ${act} AND symbols IS NOT NULL`),
+    // Wie die Uhren ihre Aktien wählen
+    pool.query(`SELECT CASE WHEN ${web} THEN 'web'
+                            WHEN symbols IS NULL THEN 'unknown'
+                            WHEN symbols = '${DEFAULT_SYMBOLS}' THEN 'default'
+                            ELSE 'settings' END AS k, count(*)::int AS n
+                  FROM devices WHERE ${act} GROUP BY 1 ORDER BY n DESC`),
   ]);
-  return { languages: langs.rows, versions: versions.rows, symbols: syms.rows, symbolsKnown: web.rows[0].n };
+  return { languages: langs.rows, versions: versions.rows, symbols: syms.rows, symbolsKnown: known.rows[0].n, lists: lists.rows };
 }
 
 /** Heutigen Tag im Verlauf fortschreiben und die letzten Tage liefern */
