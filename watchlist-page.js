@@ -277,7 +277,7 @@ function client(CFG) {
     if (!hits.length) { results.innerHTML = `<li class="empty">${esc(euPending ? L.searchingEu : L.none)}</li>`; return; }
     let sepShown = false;
     results.innerHTML = hits.map((r, i) => {
-      const sep = r.eu && !sepShown && i > 0 ? (sepShown = true, `<li class="sep">${esc(L.moreEu)}</li>`) : '';
+      const sep = r.eu && !sepShown ? (sepShown = true, `<li class="sep">${esc(L.moreEu)}</li>`) : '';
       const sub = [r.isin, r.exchange && !r.eu ? r.exchange : '', /etf/i.test(r.type || '') ? 'ETF' : ''].filter(Boolean).join(' · ');
       const chips = r.venues.map((v) => `<button class="chip${inList(v.key) ? ' in' : ''}" data-i="${i}" data-v="${v.v}">${inList(v.key) ? '✓ ' : '+ '}${esc(VENUE[v.v] || r.exchange || v.v)}</button>`).join('');
       const alt = !r.key.includes('@') || r.us ? '/logo/s/' + encodeURIComponent(r.us || r.symbol) : '';

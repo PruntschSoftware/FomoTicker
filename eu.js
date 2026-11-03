@@ -53,10 +53,12 @@ export function cleanName(raw) {
     .replace(/\s+-,?\d+$/, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
-  return s.split(' ').map((w) => {
+  const word = (w) => {
     if (KEEP_UPPER.has(w) || /\d/.test(w) || w.length <= 2) return w;
     return w.charAt(0) + w.slice(1).toLowerCase();
-  }).join(' ') || String(raw || '').trim();
+  };
+  // "HEALTH.AG" -> "Health.AG": Teile mit Punkt einzeln behandeln
+  return s.split(' ').map((w) => w.split('.').map(word).join('.')).join(' ') || String(raw || '').trim();
 }
 
 /** Ersatz-Kürzel aus dem Namen, wenn OpenFIGI nichts liefert */
