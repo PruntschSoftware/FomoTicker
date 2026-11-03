@@ -9,7 +9,8 @@
 //  - optional dauerhaft in Postgres (übersteht Deploys/Neustarts)
 //  - der Credit-Verbrauch wird zentral über ein Budget begrenzt (siehe createBudget)
 
-const SYMBOL_RE = /^[A-Z0-9][A-Z0-9.\-:/]{0,19}(@[A-Z0-9]{3,5})?$/;
+// "AAPL", "SAP@XETR" (Symbol@MIC) oder "SAP@DE0007164600.LS" (Kürzel@ISIN.Handelsplatz)
+const SYMBOL_RE = /^(?:[A-Z0-9][A-Z0-9.\-:/]{0,19}(@[A-Z0-9]{3,5})?|[A-Z0-9][A-Z0-9.\-]{0,11}@[A-Z]{2}[A-Z0-9]{9}[0-9]\.(LS|TG))$/;
 
 export function parseSymbols(raw, max) {
   const seen = new Set();

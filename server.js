@@ -8,6 +8,7 @@ import { createQuoteCache } from './quotes.js';
 import { createDirectory, US_MICS } from './directory.js';
 import { freshness } from './market.js';
 import { createStripe } from './stripe.js';
+import { createFigi } from './figi.js';
 
 const missing = checkConfig(config);
 // Datenanbieter aus PROVIDERS (z. B. "alpaca,twelvedata"); je Aufgabe der erste passende
@@ -95,7 +96,14 @@ directory.init();
 
 const stripe = config.paywallEnabled ? createStripe(config) : null;
 
-const handler = createApp({ cfg: config, pool, quotes, series, directory, stripe });
+// Deutsche Handelsplätze (L&S, Tradegate) für die Suche + Kürzel über OpenFIGI
+const eu = {
+  lsx: providers.all.find((p) => p.id === 'lsx') || null,
+  tradegate: providers.all.find((p) => p.id === 'tradegate') || null,
+  figi: createFigi({ store, apiKey: process.env.OPENFIGI_API_KEY || '' }),
+};
+
+const handler = createApp({ cfg: config, pool, quotes, series, directory, eu, stripe });
 const server = http.createServer(handler);
 console.log(`Statistik-Dashboard: ${config.publicUrl}/stats?k=${handler.statsKey}`);
 server.listen(config.port, () => {

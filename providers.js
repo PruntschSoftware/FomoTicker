@@ -24,6 +24,8 @@ import { createBudget } from './quotes.js';
 import { createAlpaca } from './alpaca.js';
 import { createEodhd } from './eodhd.js';
 import { createFinnhub } from './finnhub.js';
+import { createLsx } from './lsx.js';
+import { createTradegate } from './tradegate.js';
 import { createMock } from './mock.js';
 import { createTwelveData } from './twelvedata.js';
 
@@ -77,6 +79,16 @@ export const REGISTRY = {
       budget,
     }),
   },
+  // Lang & Schwarz Exchange: deutsche Werte + US-Aktien in Euro, Echtzeit, gratis (keine offizielle API)
+  lsx: {
+    limits: { perMinute: 120, perDay: 0 },
+    create: ({ budget }) => createLsx({ budget }),
+  },
+  // Tradegate: Echtzeit, gratis (keine offizielle API); Charts über L&S
+  tradegate: {
+    limits: { perMinute: 120, perDay: 0 },
+    create: ({ budget }) => createTradegate({ budget }),
+  },
   // Spieldaten für Tests
   mock: {
     limits: { perMinute: 0, perDay: 0 },
@@ -98,7 +110,10 @@ function budgetFor(id, def, env) {
 /** Liste der gewünschten Anbieter aus der Umgebung (PROVIDERS, sonst altes QUOTE_PROVIDER). */
 export function providerList(env) {
   const raw = env.PROVIDERS || env.QUOTE_PROVIDER || 'twelvedata';
-  return [...new Set(String(raw).toLowerCase().split(/[\s,;]+/).filter(Boolean))];
+  const list = String(raw).toLowerCase().split(/[\s,;]+/).filter(Boolean);
+  // Deutsche Handelsplätze brauchen keinen Schlüssel: immer dabei (abschaltbar mit EU_VENUES=off)
+  if (!/^(0|off|false|no)$/i.test(String(env.EU_VENUES || '')) && !list.includes('mock')) list.push('tradegate', 'lsx');
+  return [...new Set(list)];
 }
 
 /**
@@ -125,6 +140,10 @@ export function createProviders(env, { markets = 'us', log = console } = {}) {
     }
     all.push(p);
   }
+  // Tradegate-Namen aus der L&S-Suche
+  const lsx = all.find((p) => p.id === 'lsx');
+  const tg = all.find((p) => p.id === 'tradegate');
+  if (lsx && tg) tg.names = (isin) => lsx.nameOf(isin);
 
   // Je Aufgabe: Werte auf die Anbieter verteilen (erster, der den Wert kann).
   // Beispiel PROVIDERS=alpaca,eodhd: AAPL -> Alpaca, SAP@XETR -> EODHD.
@@ -158,21 +177,24 @@ export function createProviders(env, { markets = 'us', log = console } = {}) {
   return chosen;
 }
 
-const can = (p, key) => (typeof p.supports === 'function' ? p.supports(key) : true);
+const can = (p, key, method) => {
+  if (method === 'fetchSeries' && typeof p.supportsSeries === 'function') return p.supportsSeries(key);
+  return typeof p.supports === 'function' ? p.supports(key) : true;
+};
 
 /**
  * Mehrere Anbieter wie einer: Werte gehen an den ersten Anbieter, der sie kann;
  * Suchverzeichnisse werden zusammengeführt. Fällt ein Anbieter aus, liefern die anderen weiter.
  */
 export function createRouter(chain, method) {
-  const owner = (key) => chain.find((p) => can(p, key));
+  const owner = (key) => chain.find((p) => can(p, key, method));
   const batches = chain.map((p) => p.maxBatch || (p.budget?.perMinute > 0 ? Math.min(8, p.budget.perMinute) : 50));
   const router = {
     id: chain.map((p) => p.id).join('+'),
     name: chain.map((p) => p.name).join(' + '),
     configured: true,
     extendedHours: chain.some((p) => p.extendedHours),
-    supports: (key) => chain.some((p) => can(p, key)),
+    supports: (key) => chain.some((p) => can(p, key, method)),
     mics: new Set(chain.flatMap((p) => [...(p.mics || [])])),
     maxBatch: Math.min(...batches),
     parts: chain,
@@ -196,7 +218,7 @@ export function createRouter(chain, method) {
     for (let round = 0; round < chain.length && todo.length; round++) {
       const groups = new Map();
       for (const k of todo) {
-        const p = chain.find((x) => !tried.has(`${x.id}|${k}`) && can(x, k));
+        const p = chain.find((x) => !tried.has(`${x.id}|${k}`) && can(x, k, method));
         if (!p) continue;
         if (!groups.has(p)) groups.set(p, []);
         groups.get(p).push(k);

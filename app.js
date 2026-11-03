@@ -6,6 +6,8 @@ import { activatePage, alreadyActivePage, errorPage, freePage, successPage, watc
 import { parseSymbols } from './quotes.js';
 import { qrRows } from './qr.js';
 import { verifyWebhook } from './stripe.js';
+import { pickLang } from './watchlist-page.js';
+import { euKey, ISIN_RE, labelFromName, parseEuKey } from './eu.js';
 
 const MAX_BODY = 64 * 1024;
 
@@ -92,22 +94,42 @@ function cleanWatchlist(items, max) {
     const [sym] = k.split('@');
     if (!parseSymbols(k, 1).length || seen.has(k)) continue;
     seen.add(k);
-    out.push({
+    const eu = parseEuKey(k);
+    const isin = String(it?.i || eu?.isin || '').toUpperCase();
+    const entry = {
       k,
-      s: String(it?.s || sym).toUpperCase().slice(0, 20),
+      s: String(it?.s || (eu ? eu.label : sym)).toUpperCase().slice(0, 20),
       n: String(it?.n || '').slice(0, 80),
       x: String(it?.x || '').slice(0, 40),
-    });
+    };
+    if (ISIN_RE.test(isin)) entry.i = isin;
+    // verfügbare Handelsplätze (für den Wechsel auf der Watchlist-Seite) und US-Kürzel
+    if (Array.isArray(it?.vs)) entry.vs = it.vs.filter((v) => ['US', 'LS', 'TG'].includes(v)).slice(0, 3);
+    if (it?.us && parseSymbols(String(it.us).toUpperCase(), 1).length && !String(it.us).includes('@')) entry.us = String(it.us).toUpperCase();
+    out.push(entry);
     if (out.length >= max) break;
   }
   return out;
 }
 
-export function createApp({ cfg, pool, quotes, series = null, directory = null, stripe, log = console }) {
+// Kopfzeile der Uhr: bei mehreren Quellen kurz ("Alpaca · L&S")
+export function sourceLabel(src) {
+  const parts = String(src || '').split(' / ').filter(Boolean);
+  if (parts.length < 2) return parts[0] || '';
+  return parts.map((p) => p.replace(/\s*\(.*?\)\s*/g, '').replace(' Exchange', '')).join(' · ');
+}
+
+const VENUE_OF = (k) => parseEuKey(k)?.venue || (String(k).includes('@') ? 'EX' : 'US');
+
+export function createApp({ cfg, pool, quotes, series = null, directory = null, eu = null, stripe, log = console }) {
   const registerLimit = createLimiter(20, 60 * 60 * 1000);
   const activateLimit = createLimiter(30, 60 * 60 * 1000);
   const searchLimit = createLimiter(240, 60 * 1000);
   const codeLimit = createLimiter(60, 60 * 60 * 1000);
+  const priceLimit = createLimiter(120, 60 * 1000);
+  const logoLimit = createLimiter(600, 60 * 1000);
+  const tgListed = new Map(); // isin -> { at, ok }
+  const logos = new Map();    // "s/NVDA" | "i/DE…" -> { at, body: Buffer | null }
   const shortUrl = (cfg.displayUrl || cfg.publicUrl).replace(/^https?:\/\//, '').replace(/\/+$/, '');
 
   const paywall = cfg.paywallEnabled;
@@ -211,7 +233,7 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
     }
     const body = {
       st: 'ok',
-      src: quotes.sourceFor ? quotes.sourceFor(Object.keys(q)) : quotes.source,
+      src: sourceLabel(quotes.sourceFor ? quotes.sourceFor(Object.keys(q)) : quotes.source),
       code: device.pair_code,
       url: shortUrl,
       trial: a.trial,
@@ -355,11 +377,105 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
     return json(res, 200, { ok: true, items });
   }
 
-  function handleSearch(req, res, url) {
+  // US-Suche (lokales Verzeichnis, sofort) bzw. deutsche Handelsplätze (scope=eu, über L&S)
+  async function handleSearch(req, res, url) {
     if (!searchLimit(clientIp(req))) return json(res, 429, { error: 'zu viele Anfragen' });
     const q = String(url.searchParams.get('q') || '').slice(0, 60);
-    const results = directory ? directory.search(q, 12) : [];
+    if (url.searchParams.get('scope') === 'eu') {
+      return json(res, 200, { results: await searchEu(q) });
+    }
+    const results = (directory ? directory.search(q, 12) : []).map((r) => ({
+      ...r,
+      logo: r.key.includes('@') ? '' : `/logo/s/${encodeURIComponent(r.symbol)}`,
+      venues: [{ v: VENUE_OF(r.key), key: r.key }],
+    }));
     return send(res, 200, { results, ready: (directory?.size || 0) > 0 }, 'application/json; charset=utf-8');
+  }
+
+  async function isOnTradegate(isin) {
+    const hit = tgListed.get(isin);
+    if (hit && Date.now() - hit.at < 24 * 3600 * 1000) return hit.ok;
+    const ok = await eu.tradegate.listed(isin);
+    if (tgListed.size > 5000) tgListed.clear();
+    tgListed.set(isin, { at: Date.now(), ok });
+    return ok;
+  }
+
+  async function searchEu(q) {
+    if (!eu?.lsx || q.trim().length < 2) return [];
+    let hits;
+    try {
+      hits = (await eu.lsx.search(q)).slice(0, 8);
+    } catch (err) {
+      log.warn('L&S-Suche:', err.message);
+      return [];
+    }
+    if (!hits.length) return [];
+    const isins = hits.map((h) => h.isin);
+    const timeout = (ms, v) => new Promise((r) => setTimeout(() => r(v), ms));
+    const [figi, tg] = await Promise.all([
+      eu.figi ? Promise.race([eu.figi.tickers(isins).catch(() => ({})), timeout(4000, {})]) : {},
+      eu.tradegate
+        ? Promise.all(hits.map((h, i) => (i < 6 ? Promise.race([isOnTradegate(h.isin), timeout(3000, false)]) : false)))
+        : hits.map(() => false),
+    ]);
+    return hits.map((h, i) => {
+      const f = figi[h.isin];
+      const label = f?.ticker || labelFromName(h.name);
+      const usTicker = f?.exch === 'US' && h.isin.startsWith('US') ? f.ticker : '';
+      const venues = [{ v: 'LS', key: euKey(label, h.isin, 'LS') }];
+      if (tg[i]) venues.push({ v: 'TG', key: euKey(label, h.isin, 'TG') });
+      return {
+        key: venues[0].key, symbol: label, name: h.name, isin: h.isin, wkn: h.wkn, type: h.type,
+        country: h.isin.slice(0, 2), us: usTicker, logo: `/logo/i/${h.isin}`, venues,
+      };
+    });
+  }
+
+  // Aktuelle Kurse für die Watchlist-Seite (nur aus dem gemeinsamen Cache, max. 10 Werte)
+  async function handlePrices(req, res, url) {
+    if (!priceLimit(clientIp(req))) return json(res, 429, { error: 'zu viele Anfragen' });
+    const keys = parseSymbols(url.searchParams.get('k'), cfg.maxSymbols);
+    if (!keys.length) return json(res, 200, { q: {} });
+    let raw = {};
+    let ser = {};
+    try { raw = await quotes.get(keys); } catch { raw = {}; }
+    if (series) { try { ser = await series.get(keys); } catch { ser = {}; } }
+    const q = {};
+    for (const k of keys) {
+      const r = raw[k];
+      if (!r) continue;
+      const v = VENUE_OF(k);
+      const entry = { p: r[0], c: r[2], cur: v === 'LS' || v === 'TG' ? 'EUR' : 'USD' };
+      if (r[10] && r[8] > 0) entry.x = [r[8], r[9], r[10]];
+      if (Array.isArray(ser[k]) && ser[k].length >= 2) entry.sp = normalizeSeries(chartPoints(ser[k], r[0], 40), r[6]).sp;
+      q[k] = entry;
+    }
+    return json(res, 200, { q });
+  }
+
+  // Firmenlogos (über Parqet), hier zwischengespeichert – der Browser lädt sie von uns
+  async function handleLogo(req, res, kind, id) {
+    if (!logoLimit(clientIp(req))) return send(res, 429, '', 'text/plain');
+    const cacheKey = `${kind}/${id}`;
+    let hit = logos.get(cacheKey);
+    if (!hit || Date.now() - hit.at > (hit.body ? 7 : 1) * 86400 * 1000) {
+      let body = null;
+      try {
+        const path = kind === 'i' ? `isin/${id}` : `symbol/${encodeURIComponent(id)}`;
+        const r = await fetch(`https://assets.parqet.com/logos/${path}?format=png`, { signal: AbortSignal.timeout(5000) });
+        if (r.ok && /image\//.test(r.headers.get('content-type') || '')) body = Buffer.from(await r.arrayBuffer());
+      } catch { body = null; }
+      if (logos.size > 3000) logos.clear();
+      hit = { at: Date.now(), body: body && body.length < 200 * 1024 ? body : null };
+      logos.set(cacheKey, hit);
+    }
+    if (!hit.body) {
+      res.writeHead(404, { 'Cache-Control': 'public, max-age=86400' });
+      return res.end();
+    }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=604800' });
+    return res.end(hit.body);
   }
 
   const handler = async function handler(req, res) {
@@ -388,9 +504,11 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
           if (!stripe) return json(res, 404, { error: 'Abo nicht aktiviert' });
           return await handleWebhook(req, res);
         case 'GET /w':
-          return html(res, 200, watchlistCodePage(cfg, { code: (url.searchParams.get('code') || '').toUpperCase().slice(0, 6) }));
+          return html(res, 200, watchlistCodePage(cfg, { code: (url.searchParams.get('code') || '').toUpperCase().slice(0, 6), lang: pickLang('', req.headers['accept-language']) }));
         case 'GET /api/search':
-          return handleSearch(req, res, url);
+          return await handleSearch(req, res, url);
+        case 'GET /api/prices':
+          return await handlePrices(req, res, url);
         case 'GET /api/stats':
           return await handleStats(req, res, url);
         case 'GET /stats':
@@ -401,8 +519,15 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
           if (page && req.method === 'GET') {
             const code = page[1].toUpperCase();
             const device = await deviceForCode(req, code);
-            if (!device) return html(res, 404, watchlistCodePage(cfg, { code, error: 'Code nicht gefunden. Bitte auf der Uhr prüfen.' }));
-            return html(res, 200, watchlistPage(cfg, { code, max: cfg.maxSymbols }));
+            const al = req.headers['accept-language'];
+            if (!device) return html(res, 404, watchlistCodePage(cfg, { code, error: true, lang: pickLang('', al) }));
+            return html(res, 200, watchlistPage(cfg, { code, max: cfg.maxSymbols, lang: pickLang(device.lang, al) }));
+          }
+          const logo = url.pathname.match(/^\/logo\/(s|i)\/([A-Za-z0-9.\-]{1,20})$/);
+          if (logo && req.method === 'GET') {
+            const id = logo[2].toUpperCase();
+            if (logo[1] === 'i' && !ISIN_RE.test(id)) return send(res, 404, '', 'text/plain');
+            return await handleLogo(req, res, logo[1], id);
           }
           const api = url.pathname.match(/^\/api\/watchlist\/([A-Za-z0-9]{6})$/);
           if (api && (req.method === 'GET' || req.method === 'PUT')) {

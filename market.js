@@ -58,11 +58,27 @@ export function otherMarketOpen(ms = Date.now()) {
   return min >= 8 * 60 && min < 17 * 60 + 45;
 }
 
-export const marketOpen = (key, ms) => (String(key).includes('@') ? otherMarketOpen(ms) : usMarketOpen(ms));
+// Deutsche Handelsplätze mit langen Handelszeiten (Berliner Zeit):
+// L&S Exchange 7:30–23:00 (auch am Wochenende, eingeschränkt), Tradegate Mo–Fr 8:00–22:00
+export function venueOpen(key, ms = Date.now()) {
+  const k = String(key);
+  const parts = Object.fromEntries(EU.formatToParts(new Date(ms)).map((p) => [p.type, p.value]));
+  const weekend = parts.weekday === 'Sat' || parts.weekday === 'Sun';
+  const min = Number(parts.hour) * 60 + Number(parts.minute);
+  if (k.endsWith('.LS')) return min >= 7 * 60 + 30 && min < 23 * 60 + 5;
+  if (k.endsWith('.TG')) return !weekend && min >= 8 * 60 && min < 22 * 60 + 5;
+  return null;
+}
+
+export const marketOpen = (key, ms) => {
+  const v = venueOpen(key, ms);
+  if (v !== null) return v;
+  return String(key).includes('@') ? otherMarketOpen(ms) : usMarketOpen(ms);
+};
 
 /** Wie marketOpen, aber für US inkl. Vor-/Nachbörse 4:00–20:05 (für Anbieter mit extendedHours). */
 export function marketOpenExtended(key, ms) {
-  if (String(key).includes('@')) return otherMarketOpen(ms);
+  if (String(key).includes('@')) return marketOpen(key, ms);
   const { weekend, min } = nyParts(ms);
   return !weekend && min >= 4 * 60 && min < 20 * 60 + 5;
 }
