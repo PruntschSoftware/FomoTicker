@@ -33,10 +33,10 @@ const dp = providers.directory;
 // Fester Takt: Kurse alle QUOTE_CACHE_SECONDS (Standard 60 s), Charts alle SERIES_CACHE_SECONDS.
 // Gleiche Symbole vieler Uhren kosten nichts extra (gemeinsamer Cache).
 const STALE = 4 * 86400; // alte Werte notfalls bis zu 4 Tage zeigen (Wochenende, Ausfall)
-// Kurse, die älter sind als WAIT_STALE Sekunden (niemand hielt sie warm), werden beim Abruf
-// frisch geholt; die Uhr wartet dafür höchstens WAIT_MS, sonst bekommt sie den alten Wert
-const WAIT_STALE = Math.max(120, config.quoteCacheSeconds * 2);
-const WAIT_MS = 3000;
+// Kurse, die älter sind als QUOTE_CACHE_SECONDS, werden vor der Antwort frisch geholt.
+// Den alten Wert gibt es nur, wenn der Anbieter innerhalb von WAIT_MS nicht antwortet.
+const WAIT_STALE = config.quoteCacheSeconds;
+const WAIT_MS = 8000;
 const batch = (p) => p.maxBatch || (p.budget?.perMinute > 0 ? Math.min(config.batchSize, p.budget.perMinute) : 50);
 
 const quotes = createQuoteCache({
