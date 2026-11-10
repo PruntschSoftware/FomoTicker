@@ -33,6 +33,10 @@ const dp = providers.directory;
 // Fester Takt: Kurse alle QUOTE_CACHE_SECONDS (Standard 60 s), Charts alle SERIES_CACHE_SECONDS.
 // Gleiche Symbole vieler Uhren kosten nichts extra (gemeinsamer Cache).
 const STALE = 4 * 86400; // alte Werte notfalls bis zu 4 Tage zeigen (Wochenende, Ausfall)
+// Kurse, die älter sind als WAIT_STALE Sekunden (niemand hielt sie warm), werden beim Abruf
+// frisch geholt; die Uhr wartet dafür höchstens WAIT_MS, sonst bekommt sie den alten Wert
+const WAIT_STALE = Math.max(120, config.quoteCacheSeconds * 2);
+const WAIT_MS = 3000;
 const batch = (p) => p.maxBatch || (p.budget?.perMinute > 0 ? Math.min(config.batchSize, p.budget.perMinute) : 50);
 
 const quotes = createQuoteCache({
@@ -40,6 +44,8 @@ const quotes = createQuoteCache({
   staleSeconds: STALE,
   // Anbieter mit Vor-/Nachbörse werden auch 4:00–20:00 New Yorker Zeit aufgefrischt
   isFresh: freshness(() => config.quoteCacheSeconds, { extended: Boolean(qp.extendedHours) }),
+  // App nach einer Pause geöffnet: nicht den alten Kurs zeigen, sondern kurz auf den neuen warten
+  waitStaleSeconds: WAIT_STALE, waitMs: WAIT_MS,
 });
 // Kursverlauf für die Mini-Charts: seltener
 const series = sp
@@ -48,6 +54,7 @@ const series = sp
     cacheSeconds: config.seriesCacheSeconds, maxBatch: batch(sp),
     staleSeconds: STALE, missSeconds: 300,
     isFresh: freshness(() => config.seriesCacheSeconds),
+    waitStaleSeconds: config.seriesCacheSeconds * 2, waitMs: WAIT_MS,
   })
   : null;
 
@@ -89,7 +96,7 @@ const directory = createDirectory({
 });
 
 const loaded = await quotes.load() + (series ? await series.load() : 0);
-console.log(`Cache aus Postgres: ${loaded} Einträge`);
+console.log(`Cache aus Postgres: ${loaded} Einträge – Kurse älter als ${WAIT_STALE} s werden beim Abruf frisch geholt (max. ${WAIT_MS} ms Wartezeit)`);
 quotes.start(15);        // Vorwärmer: prüft alle 15 s, holt, was älter als QUOTE_CACHE_SECONDS ist
 series?.start(60);
 directory.init();

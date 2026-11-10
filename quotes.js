@@ -2,7 +2,10 @@
 //
 //  - frisch (jünger als cacheSeconds): direkt aus dem Cache
 //  - abgelaufen, aber jünger als staleSeconds: sofort den alten Wert liefern und im
-//    Hintergrund nachladen ("stale-while-revalidate") – die Uhr wartet nie auf den Anbieter
+//    Hintergrund nachladen ("stale-while-revalidate")
+//  - abgelaufen UND älter als waitStaleSeconds (z. B. App nach einer Pause neu geöffnet,
+//    niemand hat den Wert warm gehalten): höchstens waitMs auf den neuen Wert warten,
+//    erst dann den alten liefern – sonst sähe die Uhr beim ersten Abruf einen alten Kurs
 //  - unbekannt: einmal abrufen (parallele Anfragen teilen sich denselben Abruf)
 //  - Vorwärmer: was in den letzten warmWindowSeconds gefragt wurde, wird regelmäßig
 //    gesammelt aufgefrischt
@@ -81,17 +84,21 @@ export function createQuoteCache({
   maxEntries = 5000,
   missSeconds = 120,         // "keine Daten" nur kurz merken
   isFresh = null,            // optional (key, at, now) -> bool, ersetzt cacheSeconds
+  waitStaleSeconds = 0,      // abgelaufene Werte, die älter sind: auf frische warten (0 = nie)
+  waitMs = 3000,             // … aber höchstens so lange
   log = console,
 }) {
   const fresh = (k, hit, now) => {
     if (!hit) return false;
     if (!hit.value) return now - hit.at < missSeconds * 1000;
+    if (hit.retryAt && now < hit.retryAt) return true; // Abruf gerade ohne Ergebnis: kurz Ruhe
     if (isFresh) return isFresh(k, hit.at, now);
     return now - hit.at < cacheSeconds * 1000;
   };
   const cache = new Map();    // key -> { at, value | null }
   const asked = new Map();    // key -> zuletzt von einer Uhr gefragt
   const inflight = new Map(); // key -> Promise<map>
+  const noWait = new Map();   // key -> bis wann nicht mehr gewartet wird (Anbieter antwortet nicht)
   let timer = null;
 
   function remember(map, keys) {
@@ -104,6 +111,13 @@ export function createQuoteCache({
     const rows = [];
     for (const k of keys) {
       const value = map[k] || null;
+      const old = cache.get(k);
+      if (!value && old?.value && at - old.at < staleSeconds * 1000) {
+        // Abruf ohne Ergebnis (z. B. kurzer Ausfall beim Anbieter): den alten Wert behalten
+        // statt ihn mit "keine Daten" zu überschreiben, und erst in 30 s wieder fragen
+        old.retryAt = at + Math.min(missSeconds, 30) * 1000;
+        continue;
+      }
       cache.set(k, { at, value });
       if (value) rows.push({ key: k, at, value });
     }
@@ -151,6 +165,7 @@ export function createQuoteCache({
       const result = {};
       const missing = [];
       const stale = [];
+      const overdue = [];
       for (const k of keys) {
         asked.set(k, now);
         const hit = cache.get(k);
@@ -158,14 +173,39 @@ export function createQuoteCache({
         if (fresh(k, hit, now)) {
           if (hit.value) result[k] = hit.value;
         } else if (hit?.value && age < staleSeconds * 1000) {
-          result[k] = hit.value;   // sofort liefern …
-          stale.push(k);           // … und im Hintergrund erneuern
+          result[k] = hit.value;   // alter Wert als Rückfall …
+          // … im Hintergrund erneuern; ist er zu alt, kurz auf den neuen warten
+          const wait = waitStaleSeconds > 0 && age > waitStaleSeconds * 1000 && !(noWait.get(k) > now);
+          (wait ? overdue : stale).push(k);
         } else {
           missing.push(k);
         }
       }
       if (stale.length) refreshInBackground(stale);
-      if (missing.length === 0) return result;
+      // Zu alte Werte: Abruf starten und (parallel zu den fehlenden) höchstens waitMs abwarten
+      let fresher = null;
+      if (overdue.length) {
+        refreshInBackground(overdue);
+        const pending = [...new Set(overdue.map((k) => inflight.get(k)).filter(Boolean))];
+        let t;
+        const timeout = new Promise((resolve) => { t = setTimeout(resolve, waitMs); });
+        fresher = Promise.race([Promise.allSettled(pending), timeout]).then(() => {
+          clearTimeout(t);
+          const done = Date.now();
+          for (const k of overdue) {
+            const hit = cache.get(k);
+            if (hit?.value) result[k] = hit.value;
+            // kein neuer Wert in der Wartezeit: eine Minute lang nicht mehr darauf warten
+            if (!hit || hit.at <= now) noWait.set(k, done + 60000);
+            else noWait.delete(k);
+          }
+          if (noWait.size > maxEntries) noWait.clear();
+        });
+      }
+      if (missing.length === 0) {
+        if (fresher) await fresher;
+        return result;
+      }
 
       const toFetch = missing.filter((k) => !inflight.has(k));
       for (let i = 0; i < toFetch.length; i += maxBatch) {
@@ -186,8 +226,15 @@ export function createQuoteCache({
           else failures++;
         }
       }
+      if (fresher) await fresher;
       if (lastError && failures === missing.length && Object.keys(result).length === 0) throw lastError;
       return result;
+    },
+
+    /** Alter eines Werts in Sekunden (wann zuletzt vom Anbieter geholt), null = nicht im Cache */
+    ageOf(key, now = Date.now()) {
+      const hit = cache.get(key);
+      return hit?.value ? Math.max(0, Math.round((now - hit.at) / 1000)) : null;
     },
 
     /** Kürzlich gefragte, abgelaufene Werte gesammelt auffrischen. */

@@ -199,6 +199,10 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
       symbols: symbols.join(',').slice(0, 300),
     }).catch((err) => log.warn('Geräteinfo:', err.message));
 
+    // Kurse und Charts gleichzeitig holen (beide warten bei zu alten Werten kurz auf frische)
+    const serP = series && url.searchParams.get('sp') !== '0'
+      ? series.get(symbols).catch(() => ({}))
+      : Promise.resolve({});
     let raw;
     try {
       raw = await quotes.get(symbols);
@@ -206,11 +210,7 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
       log.error('Kursabruf fehlgeschlagen:', err.message);
       return json(res, 502, { error: 'Datenquelle nicht erreichbar' });
     }
-
-    let ser = {};
-    if (series && url.searchParams.get('sp') !== '0') {
-      try { ser = await series.get(symbols); } catch { ser = {}; }
-    }
+    const ser = await serP;
 
     const q = {};
     const n = {};
@@ -437,16 +437,17 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
     if (!priceLimit(clientIp(req))) return json(res, 429, { error: 'zu viele Anfragen' });
     const keys = parseSymbols(url.searchParams.get('k'), cfg.maxSymbols);
     if (!keys.length) return json(res, 200, { q: {} });
-    let raw = {};
-    let ser = {};
-    try { raw = await quotes.get(keys); } catch { raw = {}; }
-    if (series) { try { ser = await series.get(keys); } catch { ser = {}; } }
+    const [raw, ser] = await Promise.all([
+      quotes.get(keys).catch(() => ({})),
+      series ? series.get(keys).catch(() => ({})) : {},
+    ]);
     const q = {};
     for (const k of keys) {
       const r = raw[k];
       if (!r) continue;
       const v = VENUE_OF(k);
-      const entry = { p: r[0], c: r[2], cur: v === 'LS' || v === 'TG' ? 'EUR' : 'USD' };
+      // a = Alter des Kurses in Sekunden (wann zuletzt beim Anbieter geholt)
+      const entry = { p: r[0], c: r[2], cur: v === 'LS' || v === 'TG' ? 'EUR' : 'USD', a: quotes.ageOf?.(k) ?? null };
       if (r[10] && r[8] > 0) entry.x = [r[8], r[9], r[10]];
       if (Array.isArray(ser[k]) && ser[k].length >= 2) entry.sp = normalizeSeries(chartPoints(ser[k], r[0], 40), r[6]).sp;
       q[k] = entry;

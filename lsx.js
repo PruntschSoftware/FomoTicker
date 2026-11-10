@@ -97,15 +97,21 @@ export function createLsx({ fetchImpl = fetch, budget = null, log = console } = 
     return r;
   }
 
-  async function chart(id) {
+  const chartPending = new Map(); // id -> laufender Abruf (Kurs und Chart fragen oft gleichzeitig)
+  function chart(id) {
     const hit = charts.get(id);
-    if (hit && Date.now() - hit.at < 50 * 1000) return hit.value;
-    const res = await get(`/_rpc/json/instrument/chart/dataForInstrument?container=chart1&instrumentId=${id}`
-      + '&marketId=1&quotetype=mid&series=intraday&type=mini&localeId=2', { prio: 'series' });
-    const value = parseChart(await res.json());
-    if (charts.size > 2000) charts.clear();
-    charts.set(id, { at: Date.now(), value });
-    return value;
+    if (hit && Date.now() - hit.at < 50 * 1000) return Promise.resolve(hit.value);
+    if (chartPending.has(id)) return chartPending.get(id);
+    const p = (async () => {
+      const res = await get(`/_rpc/json/instrument/chart/dataForInstrument?container=chart1&instrumentId=${id}`
+        + '&marketId=1&quotetype=mid&series=intraday&type=mini&localeId=2', { prio: 'series' });
+      const value = parseChart(await res.json());
+      if (charts.size > 2000) charts.clear();
+      charts.set(id, { at: Date.now(), value });
+      return value;
+    })().finally(() => chartPending.delete(id));
+    chartPending.set(id, p);
+    return p;
   }
 
   async function page(inst) {
