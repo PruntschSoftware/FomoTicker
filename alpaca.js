@@ -176,19 +176,19 @@ export function buildQuote(snap, bars, now = Date.now()) {
   // Vor-/Nachbörse
   let extPrice = 0;
   let extSession = '';
+  // Enger Geld/Brief-Mittelkurs (Spanne < 1 %) mit Zeitpunkt – oft neuer als der letzte
+  // IEX-Trade, weil IEX außerhalb der Handelszeit nur selten handelt
+  const q = snap?.latestQuote;
+  const bid = num(q?.bp);
+  const ask = num(q?.ap);
+  const qT = q?.t ? Date.parse(q.t) : 0;
+  const qMid = bid > 0 && ask >= bid && (ask - bid) / bid < 0.01 && qT ? (bid + ask) / 2 : 0;
   if (session === 'pre') {
-    // nur heutige Trades vor der Eröffnung; sonst Mitte aus Geld/Brief, wenn eng und von heute
-    if (ltP > 0 && tDay === today && tMin < REG_OPEN) {
-      extPrice = ltP;
-    } else {
-      const q = snap?.latestQuote;
-      const bid = num(q?.bp);
-      const ask = num(q?.ap);
-      const qT = q?.t ? Date.parse(q.t) : 0;
-      if (bid > 0 && ask >= bid && (ask - bid) / bid < 0.01 && qT && nyDay(qT) === today && nyMinute(qT) < REG_OPEN) {
-        extPrice = (bid + ask) / 2;
-      }
-    }
+    // heutige Trades bzw. Kurse vor der Eröffnung – davon der jüngere
+    const tradeOk = ltP > 0 && tDay === today && tMin < REG_OPEN;
+    const quoteOk = qMid > 0 && nyDay(qT) === today && nyMinute(qT) < REG_OPEN;
+    if (tradeOk && (!quoteOk || ltT >= qT)) extPrice = ltP;
+    else if (quoteOk) extPrice = qMid;
     if (extPrice > 0) extSession = 'pre';
   }
   // Nachbörse: Trade nach 16:00 am letzten Handelstag (bzw. danach, aber nicht heute vor 9:30).
@@ -198,6 +198,8 @@ export function buildQuote(snap, bars, now = Date.now()) {
     if (after) {
       extPrice = ltP;
       extSession = 'post';
+      // in der laufenden Nachbörse: neuerer enger Mittelkurs schlägt einen alten Trade
+      if (session === 'post' && qMid > 0 && qT > ltT && nyDay(qT) === today && nyMinute(qT) >= REG_CLOSE) extPrice = qMid;
     }
   }
   const extPct = extPrice > 0 ? ((extPrice - price) / price) * 100 : 0;
