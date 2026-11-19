@@ -68,6 +68,12 @@ h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; text-transform: upperc
 .cmp .big { font: 500 26px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
 .cmp .sub { font: 12px var(--mono); color: var(--muted); }
 .delta.up { color: var(--up); } .delta.down { color: var(--down); }
+.plot { position: relative; }
+.plot svg { touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; cursor: crosshair; }
+.xh { position: absolute; top: 12px; bottom: 26px; width: 1px; margin-left: -.5px; background: var(--fg); opacity: .35; pointer-events: none; }
+.xd { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--up); border: 2px solid var(--panel); pointer-events: none; }
+.tip { position: absolute; top: -6px; background: var(--fg); color: var(--bg); font: 12px/1.4 var(--mono); padding: 5px 9px; border-radius: 6px; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,.18); font-variant-numeric: tabular-nums; }
+.tip b { font-weight: 500; }
 dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 14px; }
 dt { color: var(--muted); } dd { margin: 0; font-family: var(--mono); text-align: right; }
 </style>
@@ -91,19 +97,19 @@ dt { color: var(--muted); } dd { margin: 0; font-family: var(--mono); text-align
         <button type="button" data-d="0">Alle</button>
       </div>
     </div>
-    <svg class="chart bars-svg" id="inst" viewBox="0 0 800 220" role="img" aria-label="Neue Uhren pro Tag"></svg>
+    <div class="plot"><svg class="chart bars-svg" id="inst" viewBox="0 0 800 220" role="img" aria-label="Neue Uhren pro Tag"></svg></div>
     <div class="cmp">
       <div class="box"><label for="dayA">Tag A</label><select id="dayA"></select><span class="big" id="valA">–</span><span class="sub" id="subA"></span></div>
       <div class="box"><label for="dayB">Tag B</label><select id="dayB"></select><span class="big" id="valB">–</span><span class="sub" id="subB"></span></div>
       <div class="box"><label>Ø im Zeitraum</label><span class="big" id="avg">–</span><span class="sub" id="avgSub"></span></div>
       <div class="box"><label>Bester Tag</label><span class="big" id="best">–</span><span class="sub" id="bestSub"></span></div>
     </div>
-    <p class="note">Gezählt werden neu angemeldete echte Uhren nach Wiener Kalendertag. Tippe auf einen Balken, um ihn als Tag A zu wählen. Neuinstallationen auf derselben Uhr zählen nicht doppelt, deshalb liegt Garmins Download-Zahl etwas höher.</p>
+    <p class="note">Gezählt werden neu angemeldete echte Uhren nach Wiener Kalendertag. Mit dem Finger oder der Maus über das Diagramm fahren zeigt die Werte, Tippen auf einen Balken wählt ihn als Tag A. Neuinstallationen auf derselben Uhr zählen nicht doppelt, deshalb liegt Garmins Download-Zahl etwas höher.</p>
   </section>
 
   <section>
     <h2>Aktive echte Uhren pro Tag (UTC)</h2>
-    <svg class="chart" id="chart" viewBox="0 0 800 220" role="img" aria-label="Aktive Uhren pro Tag"></svg>
+    <div class="plot"><svg class="chart" id="chart" viewBox="0 0 800 220" role="img" aria-label="Aktive Uhren pro Tag"></svg></div>
     <p class="note" id="chartNote"></p>
   </section>
 
@@ -171,6 +177,9 @@ function renderInstalls() {
     if ((i % every === 0 && lastI - i >= Math.ceil(every * 0.7)) || i === lastI) g += '<text x="' + (x + (bw - gap) / 2) + '" y="' + (H - 6) + '" text-anchor="middle">' + r.day.slice(8) + '.' + r.day.slice(5, 7) + '</text>';
   });
   svg.innerHTML = g;
+  GEO.inst = { n: rows.length, W, idx: (px) => Math.floor((px - L) / bw), x: (i) => L + i * bw + bw / 2, y: (i) => y(rows[i].n),
+    html: (i) => '<b>' + fmtDay(rows[i].day) + '</b> · ' + rows[i].n + ' neu' + (valOf(shift(rows[i].day, -7)) != null ? '<br>Vorwoche ' + valOf(shift(rows[i].day, -7)) : '') };
+  refreshScrub('inst');
 
   // Auswahl-Listen (neueste zuerst)
   const opts = inst.slice().reverse().map((r) => '<option value="' + r.day + '">' + fmtDay(r.day) + ' · ' + r.n + '</option>').join('');
@@ -206,6 +215,39 @@ document.getElementById('dayB').addEventListener('change', (e) => { dayB = e.tar
 try { const r = Number(localStorage.getItem('range')); if ([0, 14, 30, 90].includes(r) && localStorage.getItem('range') !== null) {
   range = r; document.querySelectorAll('#range button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.d) === r))); } } catch (err) { /* egal */ }
 
+// Finger/Maus über ein Diagramm ziehen: Linie, Punkt und Werte zum Zeitpunkt
+const GEO = {}, SCRUB = {};
+function scrubAt(id, i) {
+  const g = GEO[id], st = SCRUB[id];
+  if (!g || !g.n) return hideScrub(id);
+  i = Math.max(0, Math.min(g.n - 1, i)); st.i = i;
+  const k = st.svg.getBoundingClientRect().width / g.W || 1; // viewBox -> Pixel
+  const px = g.x(i) * k;
+  st.line.hidden = st.dot.hidden = st.tip.hidden = false;
+  st.line.style.left = px + 'px';
+  st.dot.style.left = px + 'px'; st.dot.style.top = g.y(i) * k + 'px';
+  st.tip.innerHTML = g.html(i);
+  const w = st.tip.offsetWidth, max = st.svg.getBoundingClientRect().width;
+  st.tip.style.left = Math.max(0, Math.min(max - w, px - w / 2)) + 'px';
+  st.tip.style.transform = 'translateY(-100%)';
+}
+function hideScrub(id) { const st = SCRUB[id]; if (!st) return; st.i = null; st.line.hidden = st.dot.hidden = st.tip.hidden = true; }
+function refreshScrub(id) { const st = SCRUB[id]; if (st && st.i != null) scrubAt(id, st.i); }
+function setupScrub(id) {
+  const svg = document.getElementById(id), box = svg.parentElement;
+  const mk = (c) => { const d = document.createElement('div'); d.className = c; d.hidden = true; box.appendChild(d); return d; };
+  const st = SCRUB[id] = { svg, line: mk('xh'), dot: mk('xd'), tip: mk('tip'), i: null, down: false };
+  const at = (e) => { const r = svg.getBoundingClientRect(); const g = GEO[id]; if (!g) return;
+    scrubAt(id, g.idx((e.clientX - r.left) * (g.W / r.width))); };
+  svg.addEventListener('pointerdown', (e) => { st.down = true; at(e); });
+  svg.addEventListener('pointermove', (e) => { if (st.down || e.pointerType === 'mouse') at(e); });
+  const up = () => { st.down = false; };
+  svg.addEventListener('pointerup', up); svg.addEventListener('pointercancel', up);
+  svg.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') hideScrub(id); });
+  document.addEventListener('pointerdown', (e) => { if (!box.contains(e.target)) hideScrub(id); });
+}
+setupScrub('inst'); setupScrub('chart');
+
 function chart(rows) {
   const svg = document.getElementById('chart');
   const W = Math.max(280, Math.round(svg.clientWidth || 800)), H = 220, L = 34, R = 10, T = 12, B = 26;
@@ -230,6 +272,9 @@ function chart(rows) {
   svg.innerHTML = g + '<polygon points="' + area + '" fill="var(--up-soft)"/>'
     + '<polyline points="' + pts + '" fill="none" stroke="var(--up)" stroke-width="2.5" vector-effect="non-scaling-stroke"/>'
     + '<circle cx="' + x(rows.length - 1) + '" cy="' + y(last.active_real) + '" r="4" fill="var(--up)"/>' + labels;
+  GEO.chart = { n: rows.length, W, idx: (px) => rows.length === 1 ? 0 : Math.round(((px - L) / (W - L - R)) * (rows.length - 1)), x, y: (i) => y(rows[i].active_real),
+    html: (i) => '<b>' + fmtDay(rows[i].day) + '</b><br>' + rows[i].active_real + ' aktiv · ' + rows[i].new_real + ' neu' };
+  refreshScrub('chart');
   document.getElementById('chartNote').textContent = rows.length < 2
     ? 'Der Verlauf startet heute und füllt sich ab jetzt Tag für Tag.'
     : 'Heute bisher: ' + last.active_real + ' aktive Uhren, ' + last.new_real + ' neu.';
