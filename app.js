@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { breakdownStats, deviceStats, installsPerDay, findDeviceByCode, findDeviceByToken, getWatchlist, modelStats, noteDeviceInfo, registerDevice, saveSubscription, saveWatchlist, updateDaily } from './db.js';
+import { breakdownStats, bumpCounter, deviceStats, installsPerDay, findDeviceByCode, findDeviceByToken, getWatchlist, modelStats, noteDeviceInfo, readCounters, registerDevice, saveSubscription, saveWatchlist, updateDaily } from './db.js';
 import { modelName } from './models.js';
 import { statsPage } from './stats-page.js';
 import { activatePage, alreadyActivePage, errorPage, freePage, successPage, watchlistCodePage, watchlistPage } from './pages.js';
@@ -268,8 +268,10 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
   async function collectStats() {
     const [d, models, br, daily, installs] = await Promise.all([deviceStats(pool), modelStats(pool), breakdownStats(pool), updateDaily(pool, 30), installsPerDay(pool)]);
     const q = quotes.stats?.() || {};
+    const social = cfg.social?.name ? await readCounters(pool, 'social_click_').catch(() => ({})) : null;
     return {
       at: new Date().toISOString(),
+      social,
       devices: d,
       models: models.map((r) => ({ k: modelName(r.part_number), n: r.n })),
       languages: br.languages,
@@ -523,6 +525,15 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
             const al = req.headers['accept-language'];
             if (!device) return html(res, 404, watchlistCodePage(cfg, { code, error: true, lang: pickLang('', al) }));
             return html(res, 200, watchlistPage(cfg, { code, max: cfg.maxSymbols, lang: pickLang(device.lang, al) }));
+          }
+          // Social-Links der Watchlist-Seite: Klick zählen, dann weiterleiten (Ziele nur aus der Konfiguration)
+          const go = url.pathname.match(/^\/go\/(tiktok|instagram|youtube)$/);
+          if (go && req.method === 'GET') {
+            const target = cfg.social?.name ? cfg.social.links?.[go[1]] : '';
+            if (!target) return json(res, 404, { error: 'nicht gefunden' });
+            bumpCounter(pool, `social_click_${go[1]}`).catch(() => {});
+            res.writeHead(302, { Location: target, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+            return res.end();
           }
           const logo = url.pathname.match(/^\/logo\/(s|i)\/([A-Za-z0-9.\-]{1,20})$/);
           if (logo && req.method === 'GET') {

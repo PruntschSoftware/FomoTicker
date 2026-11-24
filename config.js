@@ -12,6 +12,12 @@ function num(value, fallback) {
 
 const port = num(env.PORT, 3000);
 
+// Nur https-Links ohne Leer-/Sonderzeichen zulassen (landen als href auf der Watchlist-Seite)
+function httpsUrl(value) {
+  const v = String(value || '').trim();
+  return /^https:\/\/[^\s"'<>]+$/.test(v) ? v : '';
+}
+
 export const config = {
   port,
   databaseUrl: env.DATABASE_URL,
@@ -53,6 +59,17 @@ export const config = {
     portalUrl: env.STRIPE_PORTAL_URL,
     automaticTax: bool(env.STRIPE_AUTOMATIC_TAX),
     requireTerms: bool(env.STRIPE_REQUIRE_TERMS),
+  },
+
+  // Eigene Social-Kanäle auf der Watchlist-Seite bewerben. Name und Links kommen ausschließlich aus der
+  // Umgebung (Railway-Variablen), nicht aus dem Repo. Ohne SOCIAL_NAME oder ohne Link bleibt der Block aus.
+  social: {
+    name: String(env.SOCIAL_NAME || '').trim().slice(0, 40),
+    links: {
+      tiktok: httpsUrl(env.SOCIAL_TIKTOK_URL),
+      instagram: httpsUrl(env.SOCIAL_INSTAGRAM_URL),
+      youtube: httpsUrl(env.SOCIAL_YOUTUBE_URL),
+    },
   },
 
   legal: {

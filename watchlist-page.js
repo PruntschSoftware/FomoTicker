@@ -18,6 +18,7 @@ export const T = {
     venueHelp: 'US-Börse: Kurse in US-Dollar über Alpaca. L&S und Tradegate: Kurse in Euro, wie bei deinem Broker.',
     codeIntro: 'Gib den Code ein, den deine Uhr zeigt (ganz unten in der Liste: „+ Aktien wählen“).',
     codeLabel: 'Code von der Uhr', next: 'Weiter', notFound: 'Code nicht gefunden. Bitte auf der Uhr prüfen.',
+    socialKicker: 'Börsen-News', socialText: 'Was die Märkte bewegt und warum – in kurzen Videos auf Englisch, ohne Hype.',
   },
   en: {
     title: 'Watchlist', codeTitle: 'Your watch code', search: 'Search stocks or ETFs …',
@@ -32,6 +33,7 @@ export const T = {
     venueHelp: 'US exchange: prices in US dollars via Alpaca. L&S and Tradegate: prices in euros, as at your broker.',
     codeIntro: 'Enter the code shown on your watch (at the end of the list: “+ Choose stocks”).',
     codeLabel: 'Code from your watch', next: 'Continue', notFound: 'Code not found. Please check your watch.',
+    socialKicker: 'Market news', socialText: 'What moved the markets and why, in short videos. No hype.',
   },
   fr: {
     title: 'Watchlist', codeTitle: 'Code de votre montre', search: 'Rechercher une action ou un ETF …',
@@ -46,6 +48,7 @@ export const T = {
     venueHelp: 'Bourse US : cours en dollars via Alpaca. L&S et Tradegate : cours en euros, comme chez votre courtier.',
     codeIntro: 'Saisissez le code affiché sur la montre (en bas de la liste : « + Choisir les actions »).',
     codeLabel: 'Code de la montre', next: 'Continuer', notFound: 'Code introuvable. Vérifiez sur la montre.',
+    socialKicker: 'Actu des marchés', socialText: 'Ce qui fait bouger les marchés et pourquoi, en courtes vidéos en anglais. Sans battage.',
   },
   es: {
     title: 'Watchlist', codeTitle: 'Código de tu reloj', search: 'Buscar acciones o ETF …',
@@ -60,6 +63,7 @@ export const T = {
     venueHelp: 'Bolsa de EE. UU.: precios en dólares vía Alpaca. L&S y Tradegate: precios en euros, como en tu bróker.',
     codeIntro: 'Introduce el código que muestra el reloj (al final de la lista: «+ Elegir acciones»).',
     codeLabel: 'Código del reloj', next: 'Continuar', notFound: 'Código no encontrado. Compruébalo en el reloj.',
+    socialKicker: 'Noticias de mercado', socialText: 'Qué movió los mercados y por qué, en vídeos cortos en inglés. Sin exageraciones.',
   },
   it: {
     title: 'Watchlist', codeTitle: 'Codice dell’orologio', search: 'Cerca azioni o ETF …',
@@ -74,6 +78,7 @@ export const T = {
     venueHelp: 'Borsa USA: prezzi in dollari tramite Alpaca. L&S e Tradegate: prezzi in euro, come dal tuo broker.',
     codeIntro: 'Inserisci il codice mostrato sull’orologio (in fondo alla lista: «+ Scegli titoli»).',
     codeLabel: 'Codice dell’orologio', next: 'Continua', notFound: 'Codice non trovato. Controlla l’orologio.',
+    socialKicker: 'Notizie di mercato', socialText: 'Cosa ha mosso i mercati e perché, in brevi video in inglese. Senza clamore.',
   },
 };
 
@@ -149,6 +154,13 @@ select.venue{padding-right:20px;background-image:linear-gradient(45deg,transpare
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.ok b{color:var(--up)}.toast.err b{color:var(--down)}
 .foot{margin-top:22px;font-size:13px;color:var(--faint);text-align:center}
+.social{margin-top:26px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.social .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+.social .n{font-weight:700;font-size:17px;margin-top:2px}
+.social p{margin:6px 0 12px;font-size:13.5px;color:var(--muted)}
+.social .links{display:flex;gap:8px;flex-wrap:wrap}
+.social a{flex:1;min-width:92px;text-align:center;text-decoration:none;border:1px solid var(--line);background:var(--chip);color:var(--text);border-radius:999px;padding:9px 12px;font-size:14px;font-weight:600}
+.social a:hover,.social a:focus-visible{border-color:var(--accent);outline:0}
 .help{margin-top:8px;font-size:12.5px;color:var(--faint);text-align:center}
 @media (max-width:480px){.spark{display:none}.res .sub{font-size:12px}.item{gap:8px;padding:9px 6px 9px 4px}.grip{width:16px}.item .logo{width:32px;height:32px;border-radius:9px;font-size:13px}.acts [data-act=up]{display:none}.icon{width:30px}.px{min-width:66px}.item .sym{flex-direction:column;align-items:flex-start;gap:0}.item .name{font-size:12.5px;max-width:100%}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -407,6 +419,21 @@ function client(CFG) {
   renderList();
 }
 
+const SOCIAL_LABEL = { tiktok: 'TikTok', instagram: 'Instagram', youtube: 'YouTube' };
+
+/** Hinweis auf die eigenen Social-Kanäle (nur wenn in der Konfiguration Name + mindestens ein Link gesetzt sind) */
+function socialBlock(cfg, L) {
+  const soc = cfg.social;
+  const nets = soc?.name ? Object.keys(SOCIAL_LABEL).filter((n) => soc.links?.[n]) : [];
+  if (!nets.length) return '';
+  return `<aside class="social" aria-label="${esc(soc.name)}">
+    <div class="k">${esc(L.socialKicker)}</div>
+    <div class="n">${esc(soc.name)}</div>
+    <p>${esc(L.socialText)}</p>
+    <div class="links">${nets.map((n) => `<a href="/go/${n}" target="_blank" rel="noopener nofollow">${SOCIAL_LABEL[n]}</a>`).join('')}</div>
+  </aside>`;
+}
+
 export function watchlistPage(cfg, { code, max, lang = 'en' }) {
   const L = T[lang] || T.en;
   const data = JSON.stringify({ CODE: code, MAX: Number(max) || 10, L }).replace(/</g, '\\u003c');
@@ -438,6 +465,7 @@ export function watchlistPage(cfg, { code, max, lang = 'en' }) {
   <ul id="list" class="list"></ul>
   <div class="foot">${esc(L.foot)}</div>
   <div class="help">${esc(L.venueHelp)}</div>
+  ${socialBlock(cfg, L)}
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script>(${client.toString()})(${data});</script>

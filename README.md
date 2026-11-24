@@ -14,6 +14,7 @@ und kann später ein Abo verwalten. **Standard: kostenlos** – Bezahlen ist aus
 | GET | `/api/search?q=…[&scope=eu]` | Suche US-Verzeichnis bzw. L&S/Tradegate |
 | GET | `/api/prices?k=…` | Kurse für die Watchlist-Seite (aus dem Cache) |
 | GET | `/logo/s/<symbol>`, `/logo/i/<isin>` | Firmenlogos (Cache) |
+| GET | `/go/<tiktok\|instagram\|youtube>` | Social-Link der Watchlist-Seite: Klick zählen, weiterleiten (nur mit `SOCIAL_*`) |
 | GET/POST | `/`, `/activate`, `/success` | Aktivierungsseite (nur mit Paywall) |
 | POST | `/stripe/webhook` | Stripe-Events (nur mit Paywall) |
 
@@ -43,6 +44,10 @@ Keine offiziellen APIs – Formatänderungen der Seiten können die Kurse unterb
 Die Watchlist-Seite (`/w/<code>`, `watchlist-page.js`) zeigt Logos (Parqet, über `/logo/…` zwischengespeichert),
 Live-Kurse (`/api/prices`) und erlaubt pro Wert den Handelsplatz (USA / L&S / Tradegate). Sprache: Browser,
 sonst die der Uhr (de, en, fr, es, it).
+
+**Social-Karte:** Mit `SOCIAL_NAME` und mindestens einem `SOCIAL_*_URL` (siehe `.env.example`) zeigt die Watchlist-Seite
+unter der Liste eine Karte mit Links zu den eigenen Kanälen. Die Links laufen über `/go/…`, die Klicks stehen im
+Statistik-Dashboard. Name und Links stehen nur in den Umgebungsvariablen, nicht im Repo.
 
 Die Uhr bekommt Vor-/Nachbörse als `x: { KEY: [kurs, prozent, "pre"|"post"] }`.
 

@@ -311,3 +311,16 @@ export async function installsPerDay(pool) {
   return rows;
 }
 
+/** Einfache Zähler in app_state (z. B. Klicks auf die Social-Links der Watchlist-Seite) */
+export async function bumpCounter(pool, key) {
+  await pool.query(
+    `INSERT INTO app_state (key, value) VALUES ($1, '1')
+     ON CONFLICT (key) DO UPDATE SET value = (app_state.value::bigint + 1)::text`,
+    [key],
+  );
+}
+
+export async function readCounters(pool, prefix) {
+  const { rows } = await pool.query('SELECT key, value FROM app_state WHERE key LIKE $1', [`${prefix}%`]);
+  return Object.fromEntries(rows.map((r) => [r.key.slice(prefix.length), Number(r.value) || 0]));
+}
