@@ -1,6 +1,9 @@
 // Watchlist-Seite (am Handy): suchen, Handelsplatz wählen, sortieren – mit Logos und Live-Kursen.
 // Sprache: Browser (Accept-Language), sonst Sprache der Uhr (ab App 1.7); de, en, fr, es, it.
 
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -158,8 +161,9 @@ select.venue{padding-right:20px;background-image:linear-gradient(45deg,transpare
 .social .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
 .social .n{font-weight:700;font-size:17px;margin-top:2px}
 .social p{margin:6px 0 12px;font-size:13.5px;color:var(--muted)}
-.social .links{display:flex;gap:8px;flex-wrap:wrap}
-.social a{flex:1;min-width:92px;text-align:center;text-decoration:none;border:1px solid var(--line);background:var(--chip);color:var(--text);border-radius:999px;padding:9px 12px;font-size:14px;font-weight:600}
+.social .links{display:flex;gap:6px;flex-wrap:wrap}
+.social a{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;text-decoration:none;border:1px solid var(--line);background:var(--chip);color:var(--text);border-radius:999px;padding:9px 7px;font-size:13.5px;font-weight:600}
+.social a svg{width:15px;height:15px;flex:none;fill:currentColor}
 .social a:hover,.social a:focus-visible{border-color:var(--accent);outline:0}
 .help{margin-top:8px;font-size:12.5px;color:var(--faint);text-align:center}
 @media (max-width:480px){.spark{display:none}.res .sub{font-size:12px}.item{gap:8px;padding:9px 6px 9px 4px}.grip{width:16px}.item .logo{width:32px;height:32px;border-radius:9px;font-size:13px}.acts [data-act=up]{display:none}.icon{width:30px}.px{min-width:66px}.item .sym{flex-direction:column;align-items:flex-start;gap:0}.item .name{font-size:12.5px;max-width:100%}}
@@ -421,6 +425,21 @@ function client(CFG) {
 
 const SOCIAL_LABEL = { tiktok: 'TikTok', instagram: 'Instagram', youtube: 'YouTube' };
 
+// Plattform-Icons kommen aus dem Paket simple-icons (CC0). Fehlt eines, bleibt der Button ohne Icon.
+const requireIcon = createRequire(import.meta.url);
+function loadSocialIcon(name) {
+  try {
+    const svg = readFileSync(requireIcon.resolve(`simple-icons/icons/${name}.svg`), 'utf8');
+    const d = svg.match(/<path d="([^"]+)"/)?.[1] || '';
+    return /^[\dA-Za-z .,\-]+$/.test(d) ? d : '';
+  } catch {
+    return '';
+  }
+}
+const SOCIAL_ICON = Object.fromEntries(Object.keys(SOCIAL_LABEL).map((n) => [n, loadSocialIcon(n)]));
+const socialIcon = (n) =>
+  SOCIAL_ICON[n] ? `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${SOCIAL_ICON[n]}"/></svg>` : '';
+
 /** Hinweis auf die eigenen Social-Kanäle (nur wenn in der Konfiguration Name + mindestens ein Link gesetzt sind) */
 function socialBlock(cfg, L) {
   const soc = cfg.social;
@@ -430,7 +449,7 @@ function socialBlock(cfg, L) {
     <div class="k">${esc(L.socialKicker)}</div>
     <div class="n">${esc(soc.name)}</div>
     <p>${esc(L.socialText)}</p>
-    <div class="links">${nets.map((n) => `<a href="/go/${n}" target="_blank" rel="noopener nofollow">${SOCIAL_LABEL[n]}</a>`).join('')}</div>
+    <div class="links">${nets.map((n) => `<a href="/go/${n}" target="_blank" rel="noopener nofollow">${socialIcon(n)}<span>${SOCIAL_LABEL[n]}</span></a>`).join('')}</div>
   </aside>`;
 }
 

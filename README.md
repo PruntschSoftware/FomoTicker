@@ -48,6 +48,7 @@ sonst die der Uhr (de, en, fr, es, it).
 **Social-Karte:** Mit `SOCIAL_NAME` und mindestens einem `SOCIAL_*_URL` (siehe `.env.example`) zeigt die Watchlist-Seite
 direkt unter der Liste (über den Info-Texten) eine Karte mit Links zu den eigenen Kanälen. Die Links laufen über `/go/…`, die Klicks stehen im
 Statistik-Dashboard. Name und Links stehen nur in den Umgebungsvariablen, nicht im Repo.
+Die Plattform-Icons der Buttons kommen aus dem Paket `simple-icons` (CC0, Version fest in `package.json`).
 
 Die Uhr bekommt Vor-/Nachbörse als `x: { KEY: [kurs, prozent, "pre"|"post"] }`.
 
