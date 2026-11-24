@@ -154,7 +154,7 @@ select.venue{padding-right:20px;background-image:linear-gradient(45deg,transpare
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.ok b{color:var(--up)}.toast.err b{color:var(--down)}
 .foot{margin-top:22px;font-size:13px;color:var(--faint);text-align:center}
-.social{margin-top:26px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.social{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
 .social .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
 .social .n{font-weight:700;font-size:17px;margin-top:2px}
 .social p{margin:6px 0 12px;font-size:13.5px;color:var(--muted)}
@@ -463,9 +463,9 @@ export function watchlistPage(cfg, { code, max, lang = 'en' }) {
   </div>
   <h2><span>${esc(L.onWatch)}</span><span id="count"></span></h2>
   <ul id="list" class="list"></ul>
+  ${socialBlock(cfg, L)}
   <div class="foot">${esc(L.foot)}</div>
   <div class="help">${esc(L.venueHelp)}</div>
-  ${socialBlock(cfg, L)}
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script>(${client.toString()})(${data});</script>
