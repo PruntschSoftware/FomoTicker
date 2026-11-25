@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { createApp } from './app.js';
 import { checkConfig, config } from './config.js';
-import { createCacheStore, createPool, deviceStats, migrate, modelStats, startPaywallOnce, updateDaily } from './db.js';
+import { createCacheStore, createPool, deviceStats, migrate, modelStats, resetSocialCountersOnce, startPaywallOnce, updateDaily } from './db.js';
 import { modelName } from './models.js';
 import { createProviders } from './providers.js';
 import { createQuoteCache } from './quotes.js';
@@ -23,6 +23,7 @@ if (missing.length) {
 
 const pool = createPool(config);
 await migrate(pool);
+await resetSocialCountersOnce(pool, '2026-11-25').catch((err) => console.warn('Social-Zähler zurücksetzen:', err.message));
 if (config.paywallEnabled) await startPaywallOnce(pool, config.trialDays);
 
 const store = createCacheStore(pool);

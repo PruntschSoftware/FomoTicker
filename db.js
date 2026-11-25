@@ -79,6 +79,23 @@ export async function startPaywallOnce(pool, trialDays) {
   );
 }
 
+/**
+ * Social-Zähler einmalig auf 0 setzen (Klicks + Aufrufe), z. B. nach Tests.
+ * Der Merker-Name enthält das Datum: ein neuer Reset braucht einen neuen Namen.
+ */
+export async function resetSocialCountersOnce(pool, tag) {
+  await pool.query(
+    `WITH flag AS (
+       INSERT INTO app_state (key, value) VALUES ($1, now()::text)
+       ON CONFLICT (key) DO NOTHING
+       RETURNING key
+     )
+     DELETE FROM app_state
+      WHERE EXISTS (SELECT 1 FROM flag) AND (key LIKE 'social_click_%' OR key LIKE 'social_view_%')`,
+    [`social_reset_${tag}`],
+  );
+}
+
 // Ohne 0/O/1/I, damit der Code auf der Uhr eindeutig lesbar ist
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 

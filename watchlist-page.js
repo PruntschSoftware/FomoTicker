@@ -158,6 +158,8 @@ select.venue{padding-right:20px;background-image:linear-gradient(45deg,transpare
 .toast.ok b{color:var(--up)}.toast.err b{color:var(--down)}
 .foot{margin-top:22px;font-size:13px;color:var(--faint);text-align:center}
 .social{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.social{animation:socin .35s ease-out}@keyframes socin{from{opacity:0;transform:translateY(6px)}}
+.social .done{font-size:13px;color:var(--muted);margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}.social .done b{color:var(--up)}
 .social .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
 .social .n{font-weight:700;font-size:17px;margin-top:2px}
 .social p{margin:6px 0 12px;font-size:13.5px;color:var(--muted)}
@@ -219,6 +221,14 @@ function client(CFG) {
     showToast.t = setTimeout(() => { toast.className = 'toast'; }, 1800);
   }
 
+  // Social-Karte erst nach dem ersten erfolgreichen Speichern zeigen (Arbeit erledigt, Kopf frei)
+  function revealSocial() {
+    const card = document.getElementById('social');
+    if (!card || !card.hidden) return;
+    card.hidden = false;
+    try { navigator.sendBeacon('/go/seen'); } catch { /* egal */ }
+  }
+
   async function save() {
     try {
       const r = await fetch('/api/watchlist/' + CODE, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
@@ -226,6 +236,7 @@ function client(CFG) {
       const d = await r.json();
       if (Array.isArray(d.items)) items = d.items;
       showToast('<b>✓</b> ' + esc(L.saved), 'ok');
+      revealSocial();
     } catch {
       showToast('<b>!</b> ' + esc(L.saveFail), 'err');
     }
@@ -445,7 +456,8 @@ function socialBlock(cfg, L) {
   const soc = cfg.social;
   const nets = soc?.name ? Object.keys(SOCIAL_LABEL).filter((n) => soc.links?.[n]) : [];
   if (!nets.length) return '';
-  return `<aside class="social" aria-label="${esc(soc.name)}">
+  return `<aside class="social" id="social" hidden aria-label="${esc(soc.name)}">
+    <div class="done"><b>✓</b> ${esc(L.saved)}</div>
     <div class="k">${esc(L.socialKicker)}</div>
     <div class="n">${esc(soc.name)}</div>
     <p>${esc(L.socialText)}</p>

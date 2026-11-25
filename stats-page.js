@@ -294,7 +294,9 @@ async function load() {
       ['Echte Uhren', d.real, 'registriert gesamt'],
       ['Neu', d.new_7d, 'in 7 Tagen · heute ' + d.new_1d],
       ['Web-Watchlist', d.with_watchlist, 'Uhren nutzen sie'],
-      ...(s.social ? [['Social-Klicks', (s.social.tiktok || 0) + (s.social.instagram || 0) + (s.social.youtube || 0), 'TikTok ' + (s.social.tiktok || 0) + ' · Insta ' + (s.social.instagram || 0) + ' · YouTube ' + (s.social.youtube || 0)]] : []),
+      ...(s.social ? (() => { const c = (s.social.tiktok || 0) + (s.social.instagram || 0) + (s.social.youtube || 0); return [
+        ['Social-Karte gesehen', s.social.cards || 0, 'nach dem Speichern · Seitenaufrufe ' + (s.social.pages || 0)],
+        ['Social-Klicks', c, (s.social.cards ? Math.round((c / s.social.cards) * 100) + ' % Klickrate · ' : '') + 'TikTok ' + (s.social.tiktok || 0) + ' · Insta ' + (s.social.instagram || 0) + ' · YT ' + (s.social.youtube || 0)]]; })() : []),
     ].map(([l, v, sub]) => '<div class="kpi"><span class="l">' + l + '</span><span class="v">' + v + '</span><span class="s">' + esc(sub) + '</span></div>').join('');
     last = s.daily || [];
     chart(last);

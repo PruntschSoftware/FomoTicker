@@ -269,6 +269,11 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
     const [d, models, br, daily, installs] = await Promise.all([deviceStats(pool), modelStats(pool), breakdownStats(pool), updateDaily(pool, 30), installsPerDay(pool)]);
     const q = quotes.stats?.() || {};
     const social = cfg.social?.name ? await readCounters(pool, 'social_click_').catch(() => ({})) : null;
+    if (social) {
+      const v = await readCounters(pool, 'social_view_').catch(() => ({}));
+      social.pages = v.page || 0; // Aufrufe der Watchlist-Seite
+      social.cards = v.card || 0; // Social-Karte gesehen (nach dem Speichern)
+    }
     return {
       at: new Date().toISOString(),
       social,
@@ -524,9 +529,15 @@ export function createApp({ cfg, pool, quotes, series = null, directory = null, 
             const device = await deviceForCode(req, code);
             const al = req.headers['accept-language'];
             if (!device) return html(res, 404, watchlistCodePage(cfg, { code, error: true, lang: pickLang('', al) }));
+            if (cfg.social?.name) bumpCounter(pool, 'social_view_page').catch(() => {});
             return html(res, 200, watchlistPage(cfg, { code, max: cfg.maxSymbols, lang: pickLang(device.lang, al) }));
           }
           // Social-Links der Watchlist-Seite: Klick zählen, dann weiterleiten (Ziele nur aus der Konfiguration)
+          // Social-Karte wurde angezeigt (einmal pro Seitenaufruf, per sendBeacon)
+          if (url.pathname === '/go/seen' && req.method === 'POST') {
+            if (cfg.social?.name) bumpCounter(pool, 'social_view_card').catch(() => {});
+            return send(res, 204, '', 'text/plain');
+          }
           const go = url.pathname.match(/^\/go\/(tiktok|instagram|youtube)$/);
           if (go && req.method === 'GET') {
             const target = cfg.social?.name ? cfg.social.links?.[go[1]] : '';
