@@ -157,7 +157,7 @@ select.venue{padding-right:20px;background-image:linear-gradient(45deg,transpare
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.ok b{color:var(--up)}.toast.err b{color:var(--down)}
 .foot{margin-top:22px;font-size:13px;color:var(--faint);text-align:center}
-.social{position:relative;margin:14px 0 18px;border-radius:16px;padding:1px;background:linear-gradient(135deg,#2ee59d,#2fb6ff 45%,#ff2d6f);box-shadow:0 8px 28px rgba(46,229,157,.12)}
+.social{position:relative;margin:20px 0 4px;border-radius:16px;padding:1px;background:linear-gradient(135deg,#2ee59d,#2fb6ff 45%,#ff2d6f);box-shadow:0 8px 28px rgba(46,229,157,.12)}
 .social .in{border-radius:15px;padding:14px 14px 12px;background:radial-gradient(120% 140% at 100% 0%,rgba(255,45,111,.16),transparent 55%),radial-gradient(120% 140% at 0% 100%,rgba(46,229,157,.14),transparent 55%),var(--panel)}
 .social .top{display:flex;align-items:center;gap:12px}
 .social .av{flex:none;width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#2ee59d,#2fb6ff);color:#06210f;position:relative}
@@ -515,9 +515,9 @@ export function watchlistPage(cfg, { code, max, lang = 'en' }) {
     <ul id="results" class="results" role="listbox"></ul>
     <div id="hint" class="hint">${esc(L.hint)}</div>
   </div>
-  ${socialBlock(cfg, L)}
   <h2><span>${esc(L.onWatch)}</span><span id="count"></span></h2>
   <ul id="list" class="list"></ul>
+  ${socialBlock(cfg, L)}
   <div class="foot">${esc(L.foot)}</div>
   <div class="help">${esc(L.venueHelp)}</div>
 </div>
