@@ -21,7 +21,7 @@ export const T = {
     venueHelp: 'US-Börse: Kurse in US-Dollar über Alpaca. L&S und Tradegate: Kurse in Euro, wie bei deinem Broker.',
     codeIntro: 'Gib den Code ein, den deine Uhr zeigt (ganz unten in der Liste: „+ Aktien wählen“).',
     codeLabel: 'Code von der Uhr', next: 'Weiter', notFound: 'Code nicht gefunden. Bitte auf der Uhr prüfen.',
-    socialKicker: 'Börsen-News', socialText: 'Was die Märkte bewegt und warum – in kurzen Videos auf Englisch, ohne Hype.',
+    socialKicker: 'Täglich neu · Börsen-News', socialText: 'Was die Märkte heute bewegt und warum – kurz erklärt, ohne Hype. Videos auf Englisch.', socialCta: 'Folgen',
   },
   en: {
     title: 'Watchlist', codeTitle: 'Your watch code', search: 'Search stocks or ETFs …',
@@ -36,7 +36,7 @@ export const T = {
     venueHelp: 'US exchange: prices in US dollars via Alpaca. L&S and Tradegate: prices in euros, as at your broker.',
     codeIntro: 'Enter the code shown on your watch (at the end of the list: “+ Choose stocks”).',
     codeLabel: 'Code from your watch', next: 'Continue', notFound: 'Code not found. Please check your watch.',
-    socialKicker: 'Market news', socialText: 'What moved the markets and why, in short videos. No hype.',
+    socialKicker: 'New every day · Market news', socialText: 'What is moving the markets today and why – explained in short videos. No hype.', socialCta: 'Follow',
   },
   fr: {
     title: 'Watchlist', codeTitle: 'Code de votre montre', search: 'Rechercher une action ou un ETF …',
@@ -51,7 +51,7 @@ export const T = {
     venueHelp: 'Bourse US : cours en dollars via Alpaca. L&S et Tradegate : cours en euros, comme chez votre courtier.',
     codeIntro: 'Saisissez le code affiché sur la montre (en bas de la liste : « + Choisir les actions »).',
     codeLabel: 'Code de la montre', next: 'Continuer', notFound: 'Code introuvable. Vérifiez sur la montre.',
-    socialKicker: 'Actu des marchés', socialText: 'Ce qui fait bouger les marchés et pourquoi, en courtes vidéos en anglais. Sans battage.',
+    socialKicker: 'Chaque jour · Actu des marchés', socialText: 'Ce qui fait bouger les marchés aujourd’hui et pourquoi – en courtes vidéos en anglais. Sans battage.', socialCta: 'Suivre',
   },
   es: {
     title: 'Watchlist', codeTitle: 'Código de tu reloj', search: 'Buscar acciones o ETF …',
@@ -66,7 +66,7 @@ export const T = {
     venueHelp: 'Bolsa de EE. UU.: precios en dólares vía Alpaca. L&S y Tradegate: precios en euros, como en tu bróker.',
     codeIntro: 'Introduce el código que muestra el reloj (al final de la lista: «+ Elegir acciones»).',
     codeLabel: 'Código del reloj', next: 'Continuar', notFound: 'Código no encontrado. Compruébalo en el reloj.',
-    socialKicker: 'Noticias de mercado', socialText: 'Qué movió los mercados y por qué, en vídeos cortos en inglés. Sin exageraciones.',
+    socialKicker: 'Cada día · Noticias de mercado', socialText: 'Qué mueve hoy los mercados y por qué – en vídeos cortos en inglés. Sin exageraciones.', socialCta: 'Seguir',
   },
   it: {
     title: 'Watchlist', codeTitle: 'Codice dell’orologio', search: 'Cerca azioni o ETF …',
@@ -81,7 +81,7 @@ export const T = {
     venueHelp: 'Borsa USA: prezzi in dollari tramite Alpaca. L&S e Tradegate: prezzi in euro, come dal tuo broker.',
     codeIntro: 'Inserisci il codice mostrato sull’orologio (in fondo alla lista: «+ Scegli titoli»).',
     codeLabel: 'Codice dell’orologio', next: 'Continua', notFound: 'Codice non trovato. Controlla l’orologio.',
-    socialKicker: 'Notizie di mercato', socialText: 'Cosa ha mosso i mercati e perché, in brevi video in inglese. Senza clamore.',
+    socialKicker: 'Ogni giorno · Notizie di mercato', socialText: 'Cosa muove oggi i mercati e perché – in brevi video in inglese. Senza clamore.', socialCta: 'Segui',
   },
 };
 
@@ -157,16 +157,28 @@ select.venue{padding-right:20px;background-image:linear-gradient(45deg,transpare
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.ok b{color:var(--up)}.toast.err b{color:var(--down)}
 .foot{margin-top:22px;font-size:13px;color:var(--faint);text-align:center}
-.social{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
-.social{animation:socin .35s ease-out}@keyframes socin{from{opacity:0;transform:translateY(6px)}}
-.social .done{font-size:13px;color:var(--muted);margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}.social .done b{color:var(--up)}
-.social .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
-.social .n{font-weight:700;font-size:17px;margin-top:2px}
-.social p{margin:6px 0 12px;font-size:13.5px;color:var(--muted)}
-.social .links{display:flex;gap:6px;flex-wrap:wrap}
-.social a{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;text-decoration:none;border:1px solid var(--line);background:var(--chip);color:var(--text);border-radius:999px;padding:9px 7px;font-size:13.5px;font-weight:600}
-.social a svg{width:15px;height:15px;flex:none;fill:currentColor}
-.social a:hover,.social a:focus-visible{border-color:var(--accent);outline:0}
+.social{position:relative;margin:14px 0 18px;border-radius:16px;padding:1px;background:linear-gradient(135deg,#2ee59d,#2fb6ff 45%,#ff2d6f);box-shadow:0 8px 28px rgba(46,229,157,.12)}
+.social .in{border-radius:15px;padding:14px 14px 12px;background:radial-gradient(120% 140% at 100% 0%,rgba(255,45,111,.16),transparent 55%),radial-gradient(120% 140% at 0% 100%,rgba(46,229,157,.14),transparent 55%),var(--panel)}
+.social .top{display:flex;align-items:center;gap:12px}
+.social .av{flex:none;width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#2ee59d,#2fb6ff);color:#06210f;position:relative}
+.social .av svg{width:22px;height:22px}
+.social .av::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid rgba(46,229,157,.55);animation:socring 2.4s ease-out infinite}
+@keyframes socring{0%{transform:scale(.92);opacity:1}100%{transform:scale(1.25);opacity:0}}
+.social .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:6px}
+.social .k i{width:7px;height:7px;border-radius:50%;background:#ff2d6f;box-shadow:0 0 0 3px rgba(255,45,111,.22)}
+.social .n{font-weight:750;font-size:18px;line-height:1.2;margin-top:2px}
+.social p{margin:10px 0 12px;font-size:13.5px;line-height:1.45;color:#b9c2d0}
+.social .links{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
+.social a{display:flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;text-decoration:none;color:#fff;border-radius:12px;padding:11px 8px;font-size:14px;font-weight:650;transition:transform .12s,filter .12s}
+.social a svg{width:17px;height:17px;flex:none;fill:currentColor}
+.social a.tiktok{background:#000;box-shadow:inset 0 0 0 1px #2a2a2a,-2px 0 0 -1px #25f4ee,2px 0 0 -1px #fe2c55}
+.social a.instagram{background:linear-gradient(45deg,#f9a825,#e1306c 45%,#833ab4)}
+.social a.youtube{background:#ff0033}
+.social a:hover{filter:brightness(1.1)}.social a:active{transform:scale(.97)}
+.social a:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.social.flash{animation:socflash 1.2s ease-out}
+@keyframes socflash{0%{transform:scale(1)}20%{transform:scale(1.02);box-shadow:0 0 0 6px rgba(46,229,157,.25),0 8px 28px rgba(46,229,157,.2)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.social .av::after,.social.flash{animation:none}}
 .help{margin-top:8px;font-size:12.5px;color:var(--faint);text-align:center}
 @media (max-width:480px){.spark{display:none}.res .sub{font-size:12px}.item{gap:8px;padding:9px 6px 9px 4px}.grip{width:16px}.item .logo{width:32px;height:32px;border-radius:9px;font-size:13px}.acts [data-act=up]{display:none}.icon{width:30px}.px{min-width:66px}.item .sym{flex-direction:column;align-items:flex-start;gap:0}.item .name{font-size:12.5px;max-width:100%}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -221,12 +233,20 @@ function client(CFG) {
     showToast.t = setTimeout(() => { toast.className = 'toast'; }, 1800);
   }
 
-  // Social-Karte erst nach dem ersten erfolgreichen Speichern zeigen (Arbeit erledigt, Kopf frei)
+  // Social-Karte: 'gesehen' zählen, sobald sie wirklich im Bild ist (einmal pro Aufruf)
+  const socialCard = document.getElementById('social');
+  if (socialCard) {
+    const seen = () => { try { navigator.sendBeacon('/go/seen'); } catch { /* egal */ } };
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io.disconnect(); seen(); } }, { threshold: 0.6 });
+      io.observe(socialCard);
+    } else seen();
+  }
+  // nach dem Speichern kurz hervorheben (einmal pro Aufruf)
   function revealSocial() {
-    const card = document.getElementById('social');
-    if (!card || !card.hidden) return;
-    card.hidden = false;
-    try { navigator.sendBeacon('/go/seen'); } catch { /* egal */ }
+    if (!socialCard || revealSocial.done) return;
+    revealSocial.done = true;
+    socialCard.classList.remove('flash'); void socialCard.offsetWidth; socialCard.classList.add('flash');
   }
 
   async function save() {
@@ -456,12 +476,15 @@ function socialBlock(cfg, L) {
   const soc = cfg.social;
   const nets = soc?.name ? Object.keys(SOCIAL_LABEL).filter((n) => soc.links?.[n]) : [];
   if (!nets.length) return '';
-  return `<aside class="social" id="social" hidden aria-label="${esc(soc.name)}">
-    <div class="done"><b>✓</b> ${esc(L.saved)}</div>
-    <div class="k">${esc(L.socialKicker)}</div>
-    <div class="n">${esc(soc.name)}</div>
-    <p>${esc(L.socialText)}</p>
-    <div class="links">${nets.map((n) => `<a href="/go/${n}" target="_blank" rel="noopener nofollow">${socialIcon(n)}<span>${SOCIAL_LABEL[n]}</span></a>`).join('')}</div>
+  return `<aside class="social" id="social" aria-label="${esc(soc.name)}">
+    <div class="in">
+      <div class="top">
+        <span class="av" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span>
+        <div><div class="k"><i></i>${esc(L.socialKicker)}</div><div class="n">${esc(soc.name)}</div></div>
+      </div>
+      <p>${esc(L.socialText)}</p>
+      <div class="links">${nets.map((n) => `<a class="${n}" href="/go/${n}" target="_blank" rel="noopener nofollow" aria-label="${esc((L.socialCta || 'Follow') + ' – ' + SOCIAL_LABEL[n])}">${socialIcon(n)}<span>${SOCIAL_LABEL[n]}</span></a>`).join('')}</div>
+    </div>
   </aside>`;
 }
 
@@ -492,9 +515,9 @@ export function watchlistPage(cfg, { code, max, lang = 'en' }) {
     <ul id="results" class="results" role="listbox"></ul>
     <div id="hint" class="hint">${esc(L.hint)}</div>
   </div>
+  ${socialBlock(cfg, L)}
   <h2><span>${esc(L.onWatch)}</span><span id="count"></span></h2>
   <ul id="list" class="list"></ul>
-  ${socialBlock(cfg, L)}
   <div class="foot">${esc(L.foot)}</div>
   <div class="help">${esc(L.venueHelp)}</div>
 </div>

@@ -23,7 +23,7 @@ if (missing.length) {
 
 const pool = createPool(config);
 await migrate(pool);
-await resetSocialCountersOnce(pool, '2026-11-25').catch((err) => console.warn('Social-Zähler zurücksetzen:', err.message));
+await resetSocialCountersOnce(pool, '2026-11-27').catch((err) => console.warn('Social-Zähler zurücksetzen:', err.message));
 if (config.paywallEnabled) await startPaywallOnce(pool, config.trialDays);
 
 const store = createCacheStore(pool);
